@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -17,7 +18,7 @@ export default function LoginPage() {
         setError('')
 
         try {
-            const { data, error } = await supabase.auth.signInWithPassword({
+            const { error } = await supabase.auth.signInWithPassword({
                 email,
                 password,
             })
@@ -27,8 +28,8 @@ export default function LoginPage() {
             } else {
                 router.push('/dashboard')
             }
-        } catch (err) {
-            setError('An unexpected error occurred')
+        } catch (error) {
+            setError('An unexpected error occurred: ' + error)
         } finally {
             setLoading(false)
         }
@@ -42,9 +43,12 @@ export default function LoginPage() {
                     <div className="w-full lg:w-1/2 p-8 lg:p-12 flex items-center">
                         <div className="w-full max-w-md mx-auto">
                             <div className="flex items-center mb-6 justify-center">
-                                <img
+                                <Image
                                     src="/logos/vida_logo_black.PNG"
                                     alt="Vida Ministerio Juvenil Logo"
+                                    width={240}
+                                    height={160}
+                                    priority
                                     className="h-40 w-60 object-contain"
                                 />
                             </div>
@@ -118,10 +122,13 @@ export default function LoginPage() {
                     {/* Right Section - Visual */}
                     <div className="w-full lg:w-1/2 p-4 flex items-center justify-center bg-white">
                         <div className="relative w-full">
-                            <img
+                            <Image
                                 src="/relevante-design.png"
                                 alt="Relevante Camp Design"
+                                width={960}
+                                height={720}
                                 className="w-full h-auto rounded-2xl border-4 border-white"
+                                priority
                             />
                         </div>
                     </div>
