@@ -1,9 +1,9 @@
 'use client'
 
+import Image from 'next/image'
 import { useState, useEffect, ChangeEvent, FormEvent, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, getAllPeople, User } from '@/lib/supabase'
-import Image from 'next/image'
 
 export default function DashboardPage() {
     const [users, setUsers] = useState<User[]>([])
@@ -33,23 +33,27 @@ export default function DashboardPage() {
     const [formSubmitError, setFormSubmitError] = useState('')
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [checkoutError, setCheckoutError] = useState<string | null>(null)
+    const [isRefreshing, setIsRefreshing] = useState(false)
     const router = useRouter()
 
-    useEffect(() => {
-        checkAuth()
-        fetchUsers()
-    });
-
-    const checkAuth = async () => {
+    const checkAuth = useCallback(async () => {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) {
             router.push('/login')
         }
-    }
+    }, [router])
 
-    const fetchUsers = useCallback(async (filterParams: Record<string, string> = {}) => {
+    const fetchUsers = useCallback(async (
+        filterParams: Record<string, string> = {},
+        options: { silent?: boolean } = {}
+    ) => {
+        const { silent = false } = options
         try {
-            setLoading(true)
+            if (silent) {
+                setIsRefreshing(true)
+            } else {
+                setLoading(true)
+            }
             const data = await getAllPeople(filterParams)
             const sortedUsers = Array.isArray(data)
                 ? [...data].sort(
@@ -61,9 +65,18 @@ export default function DashboardPage() {
             setError('Failed to fetch users')
             console.error(err)
         } finally {
-            setLoading(false)
+            if (silent) {
+                setIsRefreshing(false)
+            } else {
+                setLoading(false)
+            }
         }
     }, [])
+
+    useEffect(() => {
+        checkAuth()
+        fetchUsers({}, { silent: false })
+    }, [checkAuth, fetchUsers])
 
     const getActiveFilters = useCallback((filterValues = filters) =>
         Object.fromEntries(
@@ -76,7 +89,7 @@ export default function DashboardPage() {
         setFilters(newFilters)
 
         // Remove empty filters
-        fetchUsers(getActiveFilters(newFilters))
+        fetchUsers(getActiveFilters(newFilters), { silent: true })
     }
 
     const handleLogout = async () => {
@@ -121,7 +134,7 @@ export default function DashboardPage() {
             if (error) {
                 console.error(error)
                 // Revert the local state change by refetching data
-                await fetchUsers(getActiveFilters())
+                await fetchUsers(getActiveFilters(), { silent: true })
             } else {
                 console.log(data)
                 // Update local state
@@ -132,7 +145,7 @@ export default function DashboardPage() {
         } catch (err) {
             console.error('Error updating check-in status:', err)
             // Revert the local state change by refetching data
-            await fetchUsers(getActiveFilters())
+            await fetchUsers(getActiveFilters(), { silent: true })
         }
     }
 
@@ -315,11 +328,15 @@ export default function DashboardPage() {
                         <div className="flex items-center">
                             <div className="flex-shrink-0 flex items-center space-x-6">
                                 <Image
+                                    width={240}
+                                    height={160}
                                     src="/logos/relevante_logo_white.PNG"
                                     alt="Relevante Logo"
                                     className="w-20 md:w-30 h-30 object-contain transform hover:scale-105 transition-transform duration-300"
                                 />
                                 <Image
+                                    width={240}
+                                    height={160}
                                     src="/logos/vida_logo_white.PNG"
                                     alt="Vida Ministerio Juvenil Logo"
                                     className="w-20 md:w-30 h-30 object-contain transform hover:scale-105 transition-transform duration-300"
@@ -479,7 +496,15 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Users Table */}
-                <div className="bg-white rounded-3xl shadow-2xl border-2 border-gray-100 overflow-hidden backdrop-blur-sm">
+                <div className="bg-white rounded-3xl shadow-2xl border-2 border-gray-100 overflow-hidden backdrop-blur-sm relative">
+                    {isRefreshing && (
+                        <div className="absolute inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-10">
+                            <div className="flex flex-col items-center gap-3">
+                                <div className="h-8 w-8 border-2 border-[#9bc3db] border-t-transparent rounded-full animate-spin"></div>
+                                <span className="text-sm font-semibold text-slate-600">Updating participants...</span>
+                            </div>
+                        </div>
+                    )}
                     {checkoutError && (
                         <div className="mx-8 mt-6 rounded-2xl border-2 border-red-200 bg-red-50 px-6 py-4 text-sm text-red-700 shadow-lg">
                             <div className="flex items-center justify-between">
