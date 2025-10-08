@@ -28,6 +28,14 @@ export async function POST(req: Request) {
             auth: { user, pass },
         });
 
+        // Proactively verify SMTP connectivity (helps diagnose production issues)
+        try {
+            await transporter.verify();
+        } catch (err) {
+            console.error('SMTP verify failed', err);
+            return new Response(JSON.stringify({ error: 'SMTP connection failed. Please verify host/port/user/pass and allow SMTP on your provider.' }), { status: 500 });
+        }
+
         // Generate QR code as PNG buffer and embed via CID so most clients display it
         const qrPng = await QRCode.toBuffer(String(userId), { type: 'png', margin: 1, scale: 6 });
 
@@ -441,30 +449,54 @@ export async function POST(req: Request) {
             </html>
         `;
 
+        // Build logo attachments in a way that also works on Vercel (no filesystem dependency)
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
+
+        const attachments: any[] = [
+            {
+                filename: 'qr.png',
+                content: qrPng,
+                contentType: 'image/png',
+                cid: 'qr-code',
+            },
+        ];
+
+        try {
+            if (baseUrl) {
+                const [relRes, vidaRes] = await Promise.all([
+                    fetch(`${baseUrl}/logos/relevante_logo_white.PNG`),
+                    fetch(`${baseUrl}/logos/vida_logo_white.PNG`),
+                ]);
+                const [relBuf, vidaBuf] = await Promise.all([
+                    Buffer.from(await relRes.arrayBuffer()),
+                    Buffer.from(await vidaRes.arrayBuffer()),
+                ]);
+                attachments.push(
+                    { filename: 'relevante_logo_white.PNG', content: relBuf, contentType: 'image/png', cid: 'relevante_logo' },
+                    { filename: 'vida_logo_white.PNG', content: vidaBuf, contentType: 'image/png', cid: 'vida_logo' },
+                );
+            } else {
+                // Fallback to reading from build filesystem if base URL not available
+                attachments.push(
+                    { filename: 'relevante_logo_white.PNG', path: process.cwd() + '/public/logos/relevante_logo_white.PNG', cid: 'relevante_logo' },
+                    { filename: 'vida_logo_white.PNG', path: process.cwd() + '/public/logos/vida_logo_white.PNG', cid: 'vida_logo' },
+                );
+            }
+        } catch (e) {
+            console.warn('Failed to fetch logos from base URL, falling back to paths. Error:', e);
+            attachments.push(
+                { filename: 'relevante_logo_white.PNG', path: process.cwd() + '/public/logos/relevante_logo_white.PNG', cid: 'relevante_logo' },
+                { filename: 'vida_logo_white.PNG', path: process.cwd() + '/public/logos/vida_logo_white.PNG', cid: 'vida_logo' },
+            );
+        }
+
         await transporter.sendMail({
             from,
             to,
             subject,
             html,
             text,
-            attachments: [
-                {
-                    filename: 'qr.png',
-                    content: qrPng,
-                    contentType: 'image/png',
-                    cid: 'qr-code',
-                },
-                {
-                    filename: 'relevante_logo_white.PNG',
-                    path: process.cwd() + '/public/logos/relevante_logo_white.PNG',
-                    cid: 'relevante_logo',
-                },
-                {
-                    filename: 'vida_logo_white.PNG',
-                    path: process.cwd() + '/public/logos/vida_logo_white.PNG',
-                    cid: 'vida_logo',
-                },
-            ],
+            attachments,
         });
 
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
