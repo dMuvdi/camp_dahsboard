@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import type Mail from "nodemailer/lib/mailer";
 import QRCode from "qrcode";
 
 export const runtime = "nodejs";
@@ -452,7 +453,7 @@ export async function POST(req: Request) {
         // Build logo attachments in a way that also works on Vercel (no filesystem dependency)
         const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
 
-        const attachments: any[] = [
+        const attachments: Mail.Attachment[] = [
             {
                 filename: 'qr.png',
                 content: qrPng,
