@@ -34,6 +34,7 @@ export default function DashboardPage() {
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [checkoutError, setCheckoutError] = useState<string | null>(null)
     const [isRefreshing, setIsRefreshing] = useState(false)
+    const [emailStatus, setEmailStatus] = useState<{ type: 'success' | 'error' | 'loading', message: string } | null>(null)
     const router = useRouter()
 
     const checkAuth = useCallback(async () => {
@@ -108,9 +109,36 @@ export default function DashboardPage() {
         return user.has_signed ? 'Signed' : 'Not Signed'
     }
 
-    const handleEmailUser = (user: User) => {
-        // TODO: Implement email functionality
-        console.log('Send email to:', user.email)
+    const handleEmailUser = async (user: User) => {
+        try {
+            // Show loading state
+            setEmailStatus({ type: 'loading', message: 'Sending Email...' })
+
+            const res = await fetch('/api/send-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    to: user.email,
+                    subject: 'Relevante Camp - Your QR Code',
+                    text: 'Hola! Este es tu código QR para el campamento.',
+                    userId: user.id,
+                    fullName: `${user.names} ${user.last_name_1} ${user.last_name_2}`.trim()
+                })
+            })
+            if (!res.ok) {
+                console.error('Email failed')
+                setEmailStatus({ type: 'error', message: 'Oops! Failed to send email. Please try again.' })
+                setTimeout(() => setEmailStatus(null), 5000)
+            }
+            else {
+                setEmailStatus({ type: 'success', message: `🎉 Email sent to ${user.names}!` })
+                setTimeout(() => setEmailStatus(null), 5000)
+            }
+        } catch (e) {
+            console.error('Email error', e)
+            setEmailStatus({ type: 'error', message: 'Oops! Something went wrong. Please try again.' })
+            setTimeout(() => setEmailStatus(null), 5000)
+        }
     }
 
     const handleCheckInUpdate = async (user: User, isCheckedIn: boolean) => {
@@ -497,6 +525,43 @@ export default function DashboardPage() {
 
                 {/* Users Table */}
                 <div className="bg-white rounded-3xl shadow-2xl border-2 border-gray-100 overflow-hidden backdrop-blur-sm relative">
+                    {emailStatus && (
+                        <div className={`fixed bottom-6 right-6 z-50 px-6 py-4 rounded-2xl shadow-2xl border-2 transform transition-all duration-300 ease-out ${emailStatus.type === 'success'
+                            ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-300 text-green-800'
+                            : emailStatus.type === 'error'
+                                ? 'bg-gradient-to-r from-red-50 to-rose-50 border-red-300 text-red-800'
+                                : 'bg-gradient-to-r from-blue-50 to-cyan-50 border-blue-300 text-blue-800'
+                            } animate-[slideInRight_0.3s_ease-out]`}>
+                            <div className="flex items-center gap-3">
+                                {emailStatus.type === 'success' ? (
+                                    <div className="flex-shrink-0 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center animate-[scaleIn_0.4s_ease-out]">
+                                        <svg className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    </div>
+                                ) : emailStatus.type === 'error' ? (
+                                    <div className="flex-shrink-0 w-10 h-10 bg-red-500 rounded-full flex items-center justify-center animate-[shake_0.4s_ease-out]">
+                                        <svg className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </div>
+                                ) : (
+                                    <div className="flex-shrink-0 w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                                        <svg className="h-6 w-6 text-white animate-spin" viewBox="0 0 24 24" fill="none">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    </div>
+                                )}
+                                <div className="flex flex-col">
+                                    <span className="text-base font-bold leading-tight">{emailStatus.message}</span>
+                                    {emailStatus.type === 'loading' && (
+                                        <span className="text-xs font-semibold opacity-70 mt-0.5">Please wait...</span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     {isRefreshing && (
                         <div className="absolute inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-10">
                             <div className="flex flex-col items-center gap-3">
