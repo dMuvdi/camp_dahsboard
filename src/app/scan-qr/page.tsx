@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import { supabase } from '@/lib/supabase'
 
 export default function ScanQrPage() {
+    const router = useRouter()
     const videoRef = useRef<HTMLVideoElement>(null)
     const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null)
     // scanning state not required for UI; keep logic simple
@@ -110,7 +112,8 @@ export default function ScanQrPage() {
 
             if (error) throw error
 
-            setStatus('Check-in updated! You can scan the next QR.')
+            setStatus('Check-in updated! Returning to dashboard...')
+            setTimeout(() => router.push('/dashboard'), 350)
         } catch (e: unknown) {
             const msg = (e as Error)?.message || 'Failed to process QR'
             setError(msg)

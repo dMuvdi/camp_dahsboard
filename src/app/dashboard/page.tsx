@@ -13,7 +13,8 @@ export default function DashboardPage() {
         p_email: '',
         p_gender: '',
         p_name: '',
-        p_national_id: ''
+        p_national_id: '',
+        p_checked_in: '' as '' | 'true' | 'false'
     })
     const [isModalOpen, setIsModalOpen] = useState(false)
     const initialFormState = {
@@ -433,7 +434,7 @@ export default function DashboardPage() {
                         </div>
                         <h3 className="text-xl font-bold text-gray-900">Filter Participants</h3>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
                         <div className="space-y-2">
                             <label className="block text-sm font-bold text-gray-800 mb-3">
                                 Email
@@ -529,6 +530,28 @@ export default function DashboardPage() {
                                 value={filters.p_national_id}
                                 onChange={(e) => handleFilterChange('p_national_id', e.target.value)}
                             />
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="block text-sm font-bold text-gray-800 mb-3">
+                                Checked In
+                            </label>
+                            <div className="relative">
+                                <select
+                                    className="w-full px-5 py-4 pr-12 border-2 border-gray-200 rounded-2xl bg-white shadow-md text-gray-900 appearance-none transition-all duration-300 focus:border-2 focus:shadow-lg focus:ring-0 focus:outline-none transform focus:scale-[1.02]"
+                                    value={filters.p_checked_in}
+                                    onChange={(e) => handleFilterChange('p_checked_in', e.target.value)}
+                                >
+                                    <option value="">All</option>
+                                    <option value="true">Checked In</option>
+                                    <option value="false">Not Checked In</option>
+                                </select>
+                                <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
+                                    <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -659,9 +682,14 @@ export default function DashboardPage() {
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-100">
                                     {filteredUsers.map((user: User) => (
-                                        <tr key={user.id} className="hover:bg-blue-50 transition-all duration-300 transform hover:scale-[1.01] hover:shadow-md">
-                                            <td className="px-8 py-6 whitespace-nowrap text-sm font-mono text-gray-900 font-semibold">
-                                                {user.national_id}
+                                        <tr key={user.id} className={`transition-all duration-300 transform hover:scale-[1.01] hover:shadow-md ${user.checked_in
+                                            ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-400 hover:from-green-100 hover:to-emerald-100'
+                                            : 'bg-gradient-to-r from-red-50 to-rose-50 border-l-4 border-red-400 hover:from-red-100 hover:to-rose-100'
+                                            }`}>
+                                            <td className="px-8 py-6 whitespace-nowrap text-sm font-mono font-semibold">
+                                                <span className={user.checked_in ? 'text-green-800' : 'text-red-800'}>
+                                                    {user.national_id}
+                                                </span>
                                             </td>
                                             <td className="px-8 py-6 whitespace-nowrap">
                                                 <div className="flex items-center">
@@ -673,17 +701,20 @@ export default function DashboardPage() {
                                                         </div>
                                                     </div>
                                                     <div className="ml-5">
-                                                        <div className="text-sm font-bold text-gray-900">
+                                                        <div className={`text-sm font-bold ${user.checked_in ? 'text-green-800' : 'text-red-800'}`}>
                                                             {user.names} {user.last_name_1} {user.last_name_2}
                                                         </div>
-                                                        <div className="text-sm font-semibold px-2 py-1 rounded-lg mt-1" style={{ color: '#9bc3db', backgroundColor: '#f0f8ff' }}>Age: {user.age}</div>
+                                                        <div className={`text-sm font-semibold px-2 py-1 rounded-lg mt-1 ${user.checked_in
+                                                            ? 'text-green-700 bg-green-100'
+                                                            : 'text-red-700 bg-red-100'
+                                                            }`}>Age: {user.age}</div>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="px-8 py-6 whitespace-nowrap text-sm font-medium text-gray-900">
+                                            <td className={`px-8 py-6 whitespace-nowrap text-sm font-medium ${user.checked_in ? 'text-green-800' : 'text-red-800'}`}>
                                                 {user.email}
                                             </td>
-                                            <td className="px-8 py-6 whitespace-nowrap text-sm font-medium text-gray-900">
+                                            <td className={`px-8 py-6 whitespace-nowrap text-sm font-medium ${user.checked_in ? 'text-green-800' : 'text-red-800'}`}>
                                                 {user.phone_number}
                                             </td>
                                             <td className="px-8 py-6 whitespace-nowrap text-sm text-gray-900">
@@ -696,13 +727,16 @@ export default function DashboardPage() {
                                             </td>
                                             <td className="px-8 py-6 whitespace-nowrap text-center">
                                                 <div className="flex items-center justify-center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={user.checked_in}
-                                                        readOnly
-                                                        disabled
-                                                        className="h-6 w-6 text-blue-600 focus:ring-blue-500 border-2 border-gray-300 rounded-lg shadow-sm opacity-60 cursor-not-allowed"
-                                                    />
+                                                    <div className={`relative inline-flex items-center justify-center w-7 h-7 rounded-lg shadow-lg transition-all duration-300 ${user.checked_in
+                                                        ? 'bg-gradient-to-br from-green-400 to-green-600 border-2 border-green-500'
+                                                        : 'bg-white border-2 border-gray-300'
+                                                        }`}>
+                                                        {user.checked_in && (
+                                                            <svg className="w-4 h-4 text-white font-bold" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                            </svg>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td className="px-8 py-6 whitespace-nowrap text-center">
