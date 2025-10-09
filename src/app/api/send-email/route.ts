@@ -29,6 +29,8 @@ export async function POST(req: Request) {
             auth: { user, pass },
         });
 
+        //TODO: Fix email logos in production
+
         // Proactively verify SMTP connectivity (helps diagnose production issues)
         try {
             await transporter.verify();
@@ -450,8 +452,15 @@ export async function POST(req: Request) {
             </html>
         `;
 
-        // Build logo attachments in a way that also works on Vercel (no filesystem dependency)
-        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
+        // Build logo attachments in a way that also works on Vercel (prefer request origin)
+        const requestOrigin = (() => {
+            try {
+                return new URL(req.url).origin;
+            } catch {
+                return '';
+            }
+        })();
+        const baseUrl = requestOrigin || process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
 
         const attachments: Mail.Attachment[] = [
             {
@@ -465,29 +474,30 @@ export async function POST(req: Request) {
         try {
             if (baseUrl) {
                 const [relRes, vidaRes] = await Promise.all([
-                    fetch(`${baseUrl}/logos/relevante_logo_white.PNG`),
-                    fetch(`${baseUrl}/logos/vida_logo_white.PNG`),
+                    fetch(`${baseUrl}/logos/relevante_logo_white.PNG`, { cache: 'no-store' }),
+                    fetch(`${baseUrl}/logos/vida_logo_white.PNG`, { cache: 'no-store' }),
                 ]);
+                if (!relRes.ok || !vidaRes.ok) throw new Error('Logo fetch failed');
                 const [relBuf, vidaBuf] = await Promise.all([
                     Buffer.from(await relRes.arrayBuffer()),
                     Buffer.from(await vidaRes.arrayBuffer()),
                 ]);
                 attachments.push(
-                    { filename: 'relevante_logo_white.PNG', content: relBuf, contentType: 'image/png', cid: 'relevante_logo' },
-                    { filename: 'vida_logo_white.PNG', content: vidaBuf, contentType: 'image/png', cid: 'vida_logo' },
+                    { filename: 'relevante_logo_white.PNG', content: relBuf, contentType: 'image/png', cid: 'relevante_logo', contentDisposition: 'inline' },
+                    { filename: 'vida_logo_white.PNG', content: vidaBuf, contentType: 'image/png', cid: 'vida_logo', contentDisposition: 'inline' },
                 );
             } else {
                 // Fallback to reading from build filesystem if base URL not available
                 attachments.push(
-                    { filename: 'relevante_logo_white.PNG', path: process.cwd() + '/public/logos/relevante_logo_white.PNG', cid: 'relevante_logo' },
-                    { filename: 'vida_logo_white.PNG', path: process.cwd() + '/public/logos/vida_logo_white.PNG', cid: 'vida_logo' },
+                    { filename: 'relevante_logo_white.PNG', path: process.cwd() + '/public/logos/relevante_logo_white.PNG', cid: 'relevante_logo', contentDisposition: 'inline' },
+                    { filename: 'vida_logo_white.PNG', path: process.cwd() + '/public/logos/vida_logo_white.PNG', cid: 'vida_logo', contentDisposition: 'inline' },
                 );
             }
         } catch (e) {
             console.warn('Failed to fetch logos from base URL, falling back to paths. Error:', e);
             attachments.push(
-                { filename: 'relevante_logo_white.PNG', path: process.cwd() + '/public/logos/relevante_logo_white.PNG', cid: 'relevante_logo' },
-                { filename: 'vida_logo_white.PNG', path: process.cwd() + '/public/logos/vida_logo_white.PNG', cid: 'vida_logo' },
+                { filename: 'relevante_logo_white.PNG', path: process.cwd() + '/public/logos/relevante_logo_white.PNG', cid: 'relevante_logo', contentDisposition: 'inline' },
+                { filename: 'vida_logo_white.PNG', path: process.cwd() + '/public/logos/vida_logo_white.PNG', cid: 'vida_logo', contentDisposition: 'inline' },
             );
         }
 

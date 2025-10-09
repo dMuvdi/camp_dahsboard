@@ -141,6 +141,7 @@ export default function DashboardPage() {
         }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const handleCheckInUpdate = async (user: User, isCheckedIn: boolean) => {
         try {
             const { data, error } = await supabase.rpc('update_person', {
@@ -373,6 +374,15 @@ export default function DashboardPage() {
                         </div>
 
                         <div className="flex items-center space-x-4">
+                            <a
+                                href="/scan-qr"
+                                className="px-5 py-2.5 rounded-2xl text-sm font-bold text-white shadow-xl transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl"
+                                style={{ backgroundColor: '#9bc3db' }}
+                                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#8bb3d1')}
+                                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#9bc3db')}
+                            >
+                                Scan QR
+                            </a>
                             <button
                                 onClick={handleLogout}
                                 className="bg-white hover:bg-gray-50 text-gray-700 hover:text-gray-900 px-6 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 flex items-center space-x-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
@@ -689,8 +699,9 @@ export default function DashboardPage() {
                                                     <input
                                                         type="checkbox"
                                                         checked={user.checked_in}
-                                                        onChange={(e) => handleCheckInUpdate(user, e.target.checked)}
-                                                        className="h-6 w-6 text-blue-600 focus:ring-blue-500 border-2 border-gray-300 rounded-lg shadow-sm cursor-pointer hover:scale-110 transition-transform duration-200"
+                                                        readOnly
+                                                        disabled
+                                                        className="h-6 w-6 text-blue-600 focus:ring-blue-500 border-2 border-gray-300 rounded-lg shadow-sm opacity-60 cursor-not-allowed"
                                                     />
                                                 </div>
                                             </td>
