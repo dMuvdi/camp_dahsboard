@@ -26,8 +26,39 @@ export default function ScanQrPage() {
         const hasMedia = typeof navigator !== 'undefined' && !!navigator.mediaDevices && !!navigator.mediaDevices.getUserMedia
         setSupported(hasMedia)
 
-        // capture current video element reference for cleanup outside of the cleanup function
+        // Auto-start camera immediately when possible
         const v: HTMLVideoElement | null = videoRef.current
+        if (isSecure && hasMedia && v) {
+            ; (async () => {
+                try {
+                    setError('')
+                    setStatus('Requesting camera permission...')
+                    await reader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' } }, audio: false }, v, async (result) => {
+                        if (result) {
+                            const text = result.getText()
+                            await handleDecoded(text)
+                        }
+                    })
+                    setStatus('Point the camera at the QR code')
+                    setHasStarted(true)
+                } catch (e: unknown) {
+                    // Fallback to user-facing camera if env camera not accessible
+                    try {
+                        await reader.decodeFromConstraints({ video: { facingMode: { ideal: 'user' } }, audio: false }, v, async (result) => {
+                            if (result) {
+                                const text = result.getText()
+                                await handleDecoded(text)
+                            }
+                        })
+                        setStatus('Point the camera at the QR code')
+                        setHasStarted(true)
+                    } catch (err: unknown) {
+                        const msg = (err as Error)?.message || (e as Error)?.message || 'Failed to start camera'
+                        setError(msg)
+                    }
+                }
+            })()
+        }
 
         return () => {
             // Gracefully stop continuous decoding if available
@@ -43,48 +74,7 @@ export default function ScanQrPage() {
         }
     }, [])
 
-    const startScan = async () => {
-        if (!codeReaderRef.current) return
-        const reader = codeReaderRef.current
-        try {
-            setError('')
-            setStatus('Requesting camera permission...')
-
-            const constraints: MediaStreamConstraints = {
-                video: {
-                    facingMode: { ideal: 'environment' }
-                },
-                audio: false
-            }
-
-            const video = videoRef.current!
-
-            await reader.decodeFromConstraints(constraints, video, async (result) => {
-                if (result) {
-                    const text = result.getText()
-                    await handleDecoded(text)
-                }
-            })
-            setStatus('Point the camera at the QR code')
-            setHasStarted(true)
-        } catch (e: unknown) {
-            // Fallback to user-facing camera if env camera not accessible
-            try {
-                const video = videoRef.current!
-                await codeReaderRef.current!.decodeFromConstraints({ video: { facingMode: { ideal: 'user' } }, audio: false }, video, async (result) => {
-                    if (result) {
-                        const text = result.getText()
-                        await handleDecoded(text)
-                    }
-                })
-                setStatus('Point the camera at the QR code')
-                setHasStarted(true)
-            } catch (err: unknown) {
-                const msg = (err as Error)?.message || (e as Error)?.message || 'Failed to start camera'
-                setError(msg)
-            }
-        }
-    }
+    // startScan removed; auto-start handled in mount effect
 
     const handleDecoded = async (text: string) => {
         try {
@@ -113,7 +103,7 @@ export default function ScanQrPage() {
             if (error) throw error
 
             setStatus('Check-in updated! Returning to dashboard...')
-            setTimeout(() => router.push('/dashboard'), 350)
+            setTimeout(() => router.push('/dashboard', { scroll: false }), 350)
         } catch (e: unknown) {
             const msg = (e as Error)?.message || 'Failed to process QR'
             setError(msg)
@@ -132,17 +122,7 @@ export default function ScanQrPage() {
             <div className="w-full max-w-md rounded-xl overflow-hidden shadow-lg border bg-black aspect-[3/4]">
                 <video ref={videoRef} className="w-full h-full object-cover" muted playsInline autoPlay></video>
             </div>
-            {!hasStarted && (
-                <button
-                    onClick={startScan}
-                    className="mt-4 px-5 py-2.5 rounded-2xl text-sm font-bold text-white shadow-xl transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl"
-                    style={{ backgroundColor: '#9bc3db' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#8bb3d1')}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#9bc3db')}
-                >
-                    Start Camera
-                </button>
-            )}
+            {/* auto-start camera; no manual button */}
             {status && <p className="mt-4 text-sm text-gray-700">{status}</p>}
             {error && (
                 <p className="mt-2 text-sm text-red-600">{error}</p>
