@@ -375,15 +375,6 @@ export default function DashboardPage() {
                         </div>
 
                         <div className="flex items-center space-x-4">
-                            <a
-                                href="/scan-qr"
-                                className="px-5 py-2.5 rounded-2xl text-sm font-bold text-white shadow-xl transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl"
-                                style={{ backgroundColor: '#9bc3db' }}
-                                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#8bb3d1')}
-                                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#9bc3db')}
-                            >
-                                Scan QR
-                            </a>
                             <button
                                 onClick={handleLogout}
                                 className="bg-white hover:bg-gray-50 text-gray-700 hover:text-gray-900 px-6 py-3 rounded-2xl text-sm font-semibold transition-all duration-300 flex items-center space-x-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
@@ -407,7 +398,7 @@ export default function DashboardPage() {
                             <h2 className="text-4xl font-bold text-gray-900 tracking-tight">Camp Participants</h2>
                             <p className="text-lg text-gray-600 font-medium">Manage and track your camp participants</p>
                         </div>
-                        <div className="flex items-center justify-center md:justify-end">
+                        <div className="flex flex-col md:flex-row items-center justify-center md:justify-end gap-4">
                             <button
                                 onClick={() => setIsModalOpen(true)}
                                 className="px-8 py-3.5 rounded-2xl text-sm font-bold text-white shadow-xl transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl flex items-center space-x-2"
@@ -420,6 +411,19 @@ export default function DashboardPage() {
                                 </svg>
                                 <span>Add Participant</span>
                             </button>
+                            <a
+                                href="/scan-qr"
+                                className="md:hidden px-8 py-3.5 rounded-2xl text-sm font-bold text-white shadow-xl transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl flex items-center space-x-2"
+                                style={{ backgroundColor: '#6366f1' }}
+                                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#4f46e5')}
+                                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#6366f1')}
+                            >
+                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                <span>Scan QR</span>
+                            </a>
                         </div>
                     </div>
                 </div>
