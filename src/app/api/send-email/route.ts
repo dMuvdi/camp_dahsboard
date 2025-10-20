@@ -382,7 +382,7 @@ export async function POST(req: Request) {
                         <div class="route-wrapper">
                             <div class="route">
                                 <div class="route-code">CTG</div>
-                                <div class="boat-icon">🚤</div>
+                                <img src="cid:boat-icon" alt="Boat Icon" class="boat-icon" style="width: 100px; height: 100px;"/>
                                 <div class="route-code">BCH</div>
                             </div>
                         </div>
@@ -410,7 +410,7 @@ export async function POST(req: Request) {
                         <div class="detail-row">
                             <div class="detail-label">Incluye</div>
                             <div class="baggage-info">
-                                <div class="baggage-icon">🎒</div>
+                                <img src="cid:bag-icon" alt="Baggage Icon" class="baggage-icon" style="width: 40px; height: 28px;"/>
                                 <div class="baggage-text">Un bolso o mochila pequeña de hasta 40x35x25 cm y 12 kg</div>
                             </div>
                         </div>
@@ -473,31 +473,41 @@ export async function POST(req: Request) {
 
         try {
             if (baseUrl) {
-                const [relRes, vidaRes] = await Promise.all([
+                const [relRes, vidaRes, boatRes, bagRes] = await Promise.all([
                     fetch(`${baseUrl}/logos/relevante_logo_white.PNG`, { cache: 'no-store' }),
                     fetch(`${baseUrl}/logos/vida_logo_white.PNG`, { cache: 'no-store' }),
+                    fetch(`${baseUrl}/boat.png`, { cache: 'no-store' }),
+                    fetch(`${baseUrl}/bag.png`, { cache: 'no-store' }),
                 ]);
-                if (!relRes.ok || !vidaRes.ok) throw new Error('Logo fetch failed');
-                const [relBuf, vidaBuf] = await Promise.all([
+                if (!relRes.ok || !vidaRes.ok || !boatRes.ok || !bagRes.ok) throw new Error('Asset fetch failed');
+                const [relBuf, vidaBuf, boatBuf, bagBuf] = await Promise.all([
                     Buffer.from(await relRes.arrayBuffer()),
                     Buffer.from(await vidaRes.arrayBuffer()),
+                    Buffer.from(await boatRes.arrayBuffer()),
+                    Buffer.from(await bagRes.arrayBuffer()),
                 ]);
                 attachments.push(
                     { filename: 'relevante_logo_white.PNG', content: relBuf, contentType: 'image/png', cid: 'relevante_logo', contentDisposition: 'inline' },
                     { filename: 'vida_logo_white.PNG', content: vidaBuf, contentType: 'image/png', cid: 'vida_logo', contentDisposition: 'inline' },
+                    { filename: 'boat.png', content: boatBuf, contentType: 'image/png', cid: 'boat-icon', contentDisposition: 'inline' },
+                    { filename: 'bag.png', content: bagBuf, contentType: 'image/png', cid: 'bag-icon', contentDisposition: 'inline' },
                 );
             } else {
                 // Fallback to reading from build filesystem if base URL not available
                 attachments.push(
                     { filename: 'relevante_logo_white.PNG', path: process.cwd() + '/public/logos/relevante_logo_white.PNG', cid: 'relevante_logo', contentDisposition: 'inline' },
                     { filename: 'vida_logo_white.PNG', path: process.cwd() + '/public/logos/vida_logo_white.PNG', cid: 'vida_logo', contentDisposition: 'inline' },
+                    { filename: 'boat.png', path: process.cwd() + '/public/boat.png', cid: 'boat-icon', contentDisposition: 'inline' },
+                    { filename: 'bag.png', path: process.cwd() + '/public/bag.png', cid: 'bag-icon', contentDisposition: 'inline' },
                 );
             }
         } catch (e) {
-            console.warn('Failed to fetch logos from base URL, falling back to paths. Error:', e);
+            console.warn('Failed to fetch assets from base URL, falling back to paths. Error:', e);
             attachments.push(
                 { filename: 'relevante_logo_white.PNG', path: process.cwd() + '/public/logos/relevante_logo_white.PNG', cid: 'relevante_logo', contentDisposition: 'inline' },
                 { filename: 'vida_logo_white.PNG', path: process.cwd() + '/public/logos/vida_logo_white.PNG', cid: 'vida_logo', contentDisposition: 'inline' },
+                { filename: 'boat.png', path: process.cwd() + '/public/boat.png', cid: 'boat-icon', contentDisposition: 'inline' },
+                { filename: 'bag.png', path: process.cwd() + '/public/bag.png', cid: 'bag-icon', contentDisposition: 'inline' },
             );
         }
 
