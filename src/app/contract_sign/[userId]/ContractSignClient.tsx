@@ -187,16 +187,16 @@ export default function ContractSignClient({
                 new File([signatureBlob], "signature.png", { type: "image/png" })
             );
 
-            // Get auth token if available
-            const { data: sessionData } = await supabase.auth.getSession();
-            const accessToken = sessionData?.session?.access_token;
+            // Use Supabase anon key for Edge Function authentication
+            const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
             // Call Supabase Edge Function to create PDF
             const functionsUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/create-consent-pdf`;
             const response = await fetch(functionsUrl, {
                 method: "POST",
                 headers: {
-                    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+                    'Authorization': `Bearer ${anonKey}`,
+                    'apikey': anonKey || '',
                 },
                 body: formData,
             });
