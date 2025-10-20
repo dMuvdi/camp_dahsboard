@@ -9,6 +9,7 @@ export default function ScanQrPage() {
     const router = useRouter()
     const videoRef = useRef<HTMLVideoElement>(null)
     const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null)
+    const hasProcessedRef = useRef<boolean>(false)
     // scanning state not required for UI; keep logic simple
     const [error, setError] = useState<string>('')
     const [status, setStatus] = useState<string>('')
@@ -77,6 +78,9 @@ export default function ScanQrPage() {
     // startScan removed; auto-start handled in mount effect
 
     const handleDecoded = async (text: string) => {
+        // Guard: ensure we only process the first successful decode
+        if (hasProcessedRef.current) return
+        hasProcessedRef.current = true
         try {
             // Assume the QR encodes only the userId
             const userId = text.trim()
@@ -102,11 +106,21 @@ export default function ScanQrPage() {
 
             if (error) throw error
 
+            // Stop further scanning immediately after a successful update
+            const reader = codeReaderRef.current as unknown as { stopContinuousDecode?: () => void }
+            try { reader?.stopContinuousDecode?.() } catch { }
+            const v: HTMLVideoElement | null = videoRef.current
+            const stream = (v?.srcObject as MediaStream | null)
+            try { stream?.getTracks().forEach(t => t.stop()) } catch { }
+            if (v) (v as HTMLVideoElement).srcObject = null
+
             setStatus('Check-in updated! Returning to dashboard...')
             setTimeout(() => router.push('/dashboard', { scroll: false }), 350)
         } catch (e: unknown) {
             const msg = (e as Error)?.message || 'Failed to process QR'
             setError(msg)
+            // Allow retry if there was an error
+            hasProcessedRef.current = false
         }
     }
 
