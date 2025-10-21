@@ -36,6 +36,8 @@ export default function DashboardPage() {
     const [checkoutError, setCheckoutError] = useState<string | null>(null)
     const [isRefreshing, setIsRefreshing] = useState(false)
     const [emailStatus, setEmailStatus] = useState<{ type: 'success' | 'error' | 'loading', message: string } | null>(null)
+    const [isEditing, setIsEditing] = useState(false)
+    const [editingUser, setEditingUser] = useState<User | null>(null)
     const router = useRouter()
 
     const checkAuth = useCallback(async () => {
@@ -304,6 +306,8 @@ export default function DashboardPage() {
         setIsModalOpen(false)
         resetForm()
         setIsSubmitting(false)
+        setIsEditing(false)
+        setEditingUser(null)
     }
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -318,34 +322,71 @@ export default function DashboardPage() {
         setIsSubmitting(true)
         setFormSubmitError('')
 
-        const payload = {
-            p_age: Number(formData.age),
-            p_email: formData.email.trim(),
-            p_emergency_contact: formData.emergency_contact.trim() || '',
-            p_emergency_contact_phone_number: formData.emergency_contact_phone_number.trim() || '',
-            p_gender: formData.gender,
-            p_last_name_1: formData.last_name_1.trim(),
-            p_last_name_2: formData.last_name_2.trim(),
-            p_names: formData.names.trim(),
-            p_national_id: formData.national_id.trim(),
-            p_phone_number: formData.phone_number.trim()
-        }
-
-        try {
-            const { data, error } = await supabase.rpc('add_person', payload)
-            if (error) {
-                console.error(error)
-                setFormSubmitError('Failed to add participant. Please try again.')
-            } else {
-                console.log(data)
-                await fetchUsers(getActiveFilters())
-                closeModal()
+        if (isEditing && editingUser) {
+            // Update existing person
+            const updatePayload = {
+                p_age: Number(formData.age),
+                p_checked_in: editingUser.checked_in,
+                p_checked_out: editingUser.checked_out,
+                p_email: formData.email.trim(),
+                p_emergency_contact: formData.emergency_contact.trim() || '',
+                p_emergency_contact_phone_number: formData.emergency_contact_phone_number.trim() || '',
+                p_has_signed: editingUser.has_signed,
+                p_id: editingUser.id,
+                p_last_name_1: formData.last_name_1.trim(),
+                p_last_name_2: formData.last_name_2.trim(),
+                p_names: formData.names.trim(),
+                p_national_id: formData.national_id.trim(),
+                p_phone_number: formData.phone_number.trim()
             }
-        } catch (err) {
-            console.error(err)
-            setFormSubmitError('Unexpected error. Please try again.')
-        } finally {
-            setIsSubmitting(false)
+
+            try {
+                const { data, error } = await supabase.rpc('update_person', updatePayload)
+                if (error) {
+                    console.error(error)
+                    setFormSubmitError('Failed to update participant. Please try again.')
+                } else {
+                    console.log(data)
+                    await fetchUsers(getActiveFilters(), { silent: true })
+                    closeModal()
+                }
+            } catch (err) {
+                console.error(err)
+                setFormSubmitError('Unexpected error. Please try again.')
+            } finally {
+                setIsSubmitting(false)
+            }
+        } else {
+            // Add new person
+            const payload = {
+                p_age: Number(formData.age),
+                p_email: formData.email.trim(),
+                p_emergency_contact: formData.emergency_contact.trim() || '',
+                p_emergency_contact_phone_number: formData.emergency_contact_phone_number.trim() || '',
+                p_gender: formData.gender,
+                p_last_name_1: formData.last_name_1.trim(),
+                p_last_name_2: formData.last_name_2.trim(),
+                p_names: formData.names.trim(),
+                p_national_id: formData.national_id.trim(),
+                p_phone_number: formData.phone_number.trim()
+            }
+
+            try {
+                const { data, error } = await supabase.rpc('add_person', payload)
+                if (error) {
+                    console.error(error)
+                    setFormSubmitError('Failed to add participant. Please try again.')
+                } else {
+                    console.log(data)
+                    await fetchUsers(getActiveFilters())
+                    closeModal()
+                }
+            } catch (err) {
+                console.error(err)
+                setFormSubmitError('Unexpected error. Please try again.')
+            } finally {
+                setIsSubmitting(false)
+            }
         }
     }
 
@@ -686,7 +727,23 @@ export default function DashboardPage() {
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-100">
                                     {filteredUsers.map((user: User) => (
-                                        <tr key={user.id} className={`transition-all duration-300 transform hover:scale-[1.01] hover:shadow-md ${user.checked_in
+                                        <tr key={user.id} onClick={() => {
+                                            setIsEditing(true)
+                                            setEditingUser(user)
+                                            setFormData({
+                                                age: String(user.age ?? ''),
+                                                email: user.email ?? '',
+                                                emergency_contact: user.emergency_contact ?? '',
+                                                emergency_contact_phone_number: user.emergency_contact_phone_number ?? '',
+                                                gender: user.gender ?? '',
+                                                last_name_1: user.last_name_1 ?? '',
+                                                last_name_2: user.last_name_2 ?? '',
+                                                names: user.names ?? '',
+                                                national_id: user.national_id ?? '',
+                                                phone_number: user.phone_number ?? ''
+                                            })
+                                            setIsModalOpen(true)
+                                        }} className={`cursor-pointer transition-all duration-300 transform hover:scale-[1.01] hover:shadow-md ${user.checked_in
                                             ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-400 hover:from-green-100 hover:to-emerald-100'
                                             : 'bg-gradient-to-r from-red-50 to-rose-50 border-l-4 border-red-400 hover:from-red-100 hover:to-rose-100'
                                             }`}>
@@ -766,7 +823,7 @@ export default function DashboardPage() {
                                             <td className="px-8 py-6 whitespace-nowrap text-sm font-medium text-gray-600">
                                                 {new Date(user.created_at).toLocaleDateString()}
                                             </td>
-                                            <td className="px-8 py-6 whitespace-nowrap text-center">
+                                            <td className="px-8 py-6 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
                                                 <button
                                                     onClick={() => handleEmailUser(user)}
                                                     className="text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center space-x-2"
