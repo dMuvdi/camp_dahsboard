@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { supabase, getAllPeople } from "@/lib/supabase";
 import type { User } from "@/lib/supabase";
 
 interface ContractSignClientProps {
@@ -30,12 +30,62 @@ export default function ContractSignClient({
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitStatus, setSubmitStatus] = useState<"idle" | "success" | "error">("idle");
     const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+    const [guardianSelection, setGuardianSelection] = useState<"parent" | "delegate" | null>("parent");
+    const [delegateNationalId, setDelegateNationalId] = useState("");
+    const [delegateFullName, setDelegateFullName] = useState("");
+    const [isSearchingDelegate, setIsSearchingDelegate] = useState(false);
+    const delegateInputRef = useRef<HTMLInputElement | null>(null);
+    const [guardianName, setGuardianName] = useState("");
+    const [guardianNationalId, setGuardianNationalId] = useState("");
 
     const todayFormatted = new Date().toLocaleDateString("es-ES", {
         day: "numeric",
         month: "long",
         year: "numeric",
     });
+    const isMinor = Number(participant.age) < 18;
+
+    const searchDelegateByNationalId = async () => {
+        if (!isMinor) return;
+        if (guardianSelection !== "delegate") return;
+        const value = delegateNationalId.trim();
+        if (!value) {
+            setDelegateFullName("");
+            return;
+        }
+        setIsSearchingDelegate(true);
+        try {
+            const results = await getAllPeople({ p_national_id: value });
+            if (Array.isArray(results) && results.length > 0) {
+                const person = results[0];
+                const full = `${person.names} ${person.last_name_1} ${person.last_name_2}`.trim();
+                setDelegateFullName(full);
+                // Keep the typed national ID as-is (no auto-complete), only fill the name
+            } else {
+                setDelegateFullName("");
+            }
+        } catch {
+            setDelegateFullName("");
+        } finally {
+            setIsSearchingDelegate(false);
+        }
+    };
+
+    // Programmatically blur the delegate input shortly after typing stops, to trigger onBlur search
+    useEffect(() => {
+        if (!isMinor) return;
+        if (guardianSelection !== "delegate") return;
+        const value = delegateNationalId.trim();
+        // If empty, ensure name is blank and don't schedule blur
+        if (!value) {
+            setDelegateFullName("");
+            return;
+        }
+        const handle = window.setTimeout(() => {
+            delegateInputRef.current?.blur();
+        }, 600);
+        return () => window.clearTimeout(handle);
+    }, [isMinor, guardianSelection, delegateNationalId]);
 
     useEffect(() => {
         const handleResize = () => {
@@ -162,6 +212,22 @@ export default function ContractSignClient({
             return;
         }
 
+        if (isMinor && guardianSelection === null) {
+            setError("Por favor selecciona una de las opciones de autorización para menores.");
+            return;
+        }
+
+        if (isMinor) {
+            if (!guardianName.trim() || !guardianNationalId.trim()) {
+                setError("Por favor ingresa tu nombre y C.C. como padre/madre/tutor(a).");
+                return;
+            }
+            if (guardianSelection === "delegate" && !delegateNationalId.trim()) {
+                setError("Por favor ingresa la C.C. del responsable seleccionado.");
+                return;
+            }
+        }
+
         setError(null);
         setIsSubmitting(true);
         setSubmitStatus("idle");
@@ -283,9 +349,16 @@ export default function ContractSignClient({
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                             <div>
                                 <p className="text-sm uppercase tracking-wider text-slate-500 font-semibold">Participante</p>
-                                <h2 className="text-2xl font-bold text-slate-900">
-                                    {participant.names} {participant.last_name_1} {participant.last_name_2}
-                                </h2>
+                                <div className="flex items-center gap-3">
+                                    <h2 className="text-2xl font-bold text-slate-900">
+                                        {participant.names} {participant.last_name_1} {participant.last_name_2}
+                                    </h2>
+                                    {isMinor && (
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-700 border border-orange-200">
+                                            Menor de edad
+                                        </span>
+                                    )}
+                                </div>
                                 <p className="text-sm text-slate-600 mt-1">C.C. {participant.national_id}</p>
                             </div>
                         </div>
@@ -336,48 +409,144 @@ export default function ContractSignClient({
                                     unir a los campistas en prácticas colectivas de actos de oración, culto, enseñanza y festividades de
                                     conformidad a las creencias religiosas que profesamos.
                                 </p>
-                                <p className="mt-4 text-slate-700 leading-relaxed">
-                                    Yo {participant.names} {participant.last_name_1} {participant.last_name_2} identificado con C.C. No. {participant.national_id}, manifiesto mi
-                                    participación voluntaria y bajo mi propia responsabilidad en el RELEVANTE CAMP, de ahora en adelante Campamento.
-                                    Así mismo, declaro que conozco el listado de actividades que se programarán para los campistas, por lo que acepto
-                                    participar en todas las actividades que se dispongan, salvo las que se expresen en las observaciones y anotaciones.
-                                </p>
-                                <p className="mt-4 text-slate-700 leading-relaxed">
-                                    Yo acepto y entiendo que el personal que dirigirá el Campamento se esfuerza por proporcionar un ambiente seguro y
-                                    supervisado, pero reconozco y acepto que existen ciertos riesgos inherentes en las actividades al aire libre y
-                                    podría estar expuestos a situaciones imprevistas. Entiendo que el Campamento hará todo lo posible para garantizar
-                                    la seguridad de los participantes, así que eximo de responsabilidad a la Iglesia Centro Bíblico Internacional y a
-                                    los organizadores del Campamento por lesiones, pérdidas, daños materiales o personales que puedan ocurrir durante
-                                    el campamento, siempre que no medie dolo o culpa grave de su parte.
-                                </p>
-                                <p className="mt-4 text-slate-700 leading-relaxed">
-                                    Autorizo a los organizadores del campamento para utilizar fotografías, videos u otros medios de grabación que
-                                    incluyan mi imagen para propósito promocionales o educativos, siempre y cuando no se violente mi integridad y que
-                                    se respete mi privacidad y seguridad en todas las publicaciones. Entiendo que las actividades del Campamento se
-                                    realizarán en el predio privado LA NICLALA en la Isla Bocachica, por lo que las instalaciones como habitaciones,
-                                    zonas de descanso, piscinas, así como las comidas son proporcionados por la Finca La Niclala, y no por la Iglesia
-                                    Centro Bíblico Internacional de Cartagena, por lo que declaro que libero de total responsabilidad al Campamento y a
-                                    la Iglesia de los servicios prestados por la Finca La Niclala. También acepto que conozco que empresas privadas
-                                    prestarán el servicio de transporte marítimo desde la ciudad de Cartagena a la Isla Bocachica.
-                                </p>
-                                <p className="mt-4 text-slate-700 leading-relaxed">
-                                    En ese sentido, autorizo de manera voluntaria y libre mi participación en el Campamento RELEVANTE CAMP,
-                                    comprometiéndome a dar cumplimiento a las indicaciones generales del campamento que se anexan a este documento,
-                                    por lo que acataré las restricciones que se fijen como necesarias de seguridad y salubridad, así como cumplir con
-                                    las acciones de autocuidado.
-                                </p>
-                                <p className="mt-4 text-slate-700 leading-relaxed">
-                                    Por otra parte, siendo que de manera voluntaria expreso mi deseo de autorizar viaje y campamento, me comprometo a
-                                    no presentar ninguna denuncia, queja y/o algún tipo de acción frente a la Iglesia Centro Bíblico Internacional de
-                                    la ciudad de Cartagena. De la misma manera me comprometo llevar equipo de protección personal necesario y requerido
-                                    por el Campamento, así mismo, me comprometo a cumplir todas las normas de bioseguridad establecidas para protegerme,
-                                    proteger a los demás, de manera íntegra y velando por la salud de todos los participantes del viaje y campamento
-                                    conforme a lo dispuesto por los organizadores del evento.
-                                </p>
-                                <p className="mt-4 text-slate-700 leading-relaxed">
-                                    Para los efectos legales pertinentes, suscribo el presente documento de forma voluntaria hoy {todayFormatted}.
-                                </p>
+                                {isMinor ? (
+                                    <>
+                                        <p className="mt-4 text-slate-700 leading-relaxed">
+                                            Yo,
+                                            <input
+                                                type="text"
+                                                value={guardianName}
+                                                onChange={(e) => setGuardianName(e.target.value)}
+                                                placeholder="Nombre del padre/madre/tutor"
+                                                className="mx-2 inline-block px-3 py-1 rounded-lg border border-slate-300 text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                style={{ minWidth: 220 }}
+                                            />
+                                            identificado(a) con C.C. No.
+                                            <input
+                                                type="text"
+                                                inputMode="numeric"
+                                                value={guardianNationalId}
+                                                onChange={(e) => setGuardianNationalId(e.target.value)}
+                                                placeholder="Número de C.C."
+                                                className="mx-2 inline-block px-3 py-1 rounded-lg border border-slate-300 text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                style={{ minWidth: 180 }}
+                                            />
+                                            , en calidad de padre, madre o tutor(a), autorizo la participación de mi hijo(a) {participant.names} {participant.last_name_1} {participant.last_name_2}, identificado(a) con T.I. No. {participant.national_id}, en la actividad RELEVANTE CAMP. Declaro que conozco el listado de actividades programadas para los campistas y acepto su participación en todas, salvo aquellas que se indiquen expresamente en las observaciones o anotaciones.
+                                        </p>
+                                        <p className="mt-4 text-slate-700 leading-relaxed">
+                                            Acepto y entiendo que el personal que dirigirá el Campamento se esfuerza por proporcionar un ambiente seguro y supervisado; sin embargo, reconozco que existen ciertos riesgos inherentes a las actividades al aire libre, así como la posibilidad de situaciones imprevistas. Entiendo que el Campamento adoptará todas las medidas razonables para garantizar la seguridad de los participantes; por ello, eximo de responsabilidad a la Iglesia Centro Bíblico Internacional y a los organizadores del evento por cualquier lesión, pérdida o daño material o personal que pueda ocurrir durante el Campamento, siempre que no medie dolo o culpa grave de su parte.
+                                        </p>
+                                        <p className="mt-4 text-slate-700 leading-relaxed">
+                                            Autorizo a los organizadores del Campamento a utilizar fotografías, videos u otros medios de grabación que incluyan la imagen de mi hijo(a), con fines promocionales o educativos, siempre que no se vulnere su integridad ni su privacidad. Entiendo que las actividades del Campamento se realizarán en el predio privado La Niclala, ubicado en la Isla de Bocachica, cuyas instalaciones, zonas de descanso, piscinas y servicios de alimentación son proporcionados por la Finca La Niclala, y no por la Iglesia Centro Bíblico Internacional de Cartagena. En consecuencia, libero de toda responsabilidad al Campamento y a la Iglesia respecto de los servicios prestados por la Finca La Niclala. También reconozco que empresas privadas serán las encargadas del transporte marítimo a los campistas desde la ciudad de Cartagena hasta la Isla de Bocachica.
+
+                                        </p>
+                                        <p className="mt-4 text-slate-700 leading-relaxed">
+                                            En ese sentido, autorizo de manera voluntaria y libre la participación de mi hijo(a) en el Campamento RELEVANTE CAMP, comprometiéndome a que cumpla las indicaciones generales del evento anexas a este documento. Acepto las restricciones de seguridad y salubridad que se consideren necesarias, y promoveré las acciones de autocuidado pertinentes.
+
+                                        </p>
+                                        <p className="mt-4 text-slate-700 leading-relaxed">
+                                            Por otra parte, manifiesto de manera voluntaria mi decisión de autorizar el viaje y la participación de mi hijo(a) en el Campamento, comprometiéndome a no presentar denuncia, queja o acción alguna frente a la Iglesia Centro Bíblico Internacional de Cartagena por hechos derivados de esta actividad. Así mismo, me comprometo a proveer a mi hijo(a) el equipo de protección personal necesario y a garantizar que cumpla las normas de bioseguridad establecidas para la protección y bienestar de todos los participantes.
+                                        </p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className="mt-4 text-slate-700 leading-relaxed">
+                                            Yo {participant.names} {participant.last_name_1} {participant.last_name_2} identificado con C.C. No. {participant.national_id}, manifiesto mi
+                                            participación voluntaria y bajo mi propia responsabilidad en el RELEVANTE CAMP, de ahora en adelante Campamento.
+                                            Así mismo, declaro que conozco el listado de actividades que se programarán para los campistas, por lo que acepto
+                                            participar en todas las actividades que se dispongan, salvo las que se expresen en las observaciones y anotaciones.
+                                        </p>
+                                        <p className="mt-4 text-slate-700 leading-relaxed">
+                                            Yo acepto y entiendo que el personal que dirigirá el Campamento se esfuerza por proporcionar un ambiente seguro y
+                                            supervisado, pero reconozco y acepto que existen ciertos riesgos inherentes en las actividades al aire libre y
+                                            podría estar expuestos a situaciones imprevistas. Entiendo que el Campamento hará todo lo posible para garantizar
+                                            la seguridad de los participantes, así que eximo de responsabilidad a la Iglesia Centro Bíblico Internacional y a
+                                            los organizadores del Campamento por lesiones, pérdidas, daños materiales o personales que puedan ocurrir durante
+                                            el campamento, siempre que no medie dolo o culpa grave de su parte.
+                                        </p>
+                                        <p className="mt-4 text-slate-700 leading-relaxed">
+                                            Autorizo a los organizadores del campamento para utilizar fotografías, videos u otros medios de grabación que
+                                            incluyan mi imagen para propósito promocionales o educativos, siempre y cuando no se violente mi integridad y que
+                                            se respete mi privacidad y seguridad en todas las publicaciones. Entiendo que las actividades del Campamento se
+                                            realizarán en el predio privado LA NICLALA en la Isla Bocachica, por lo que las instalaciones como habitaciones,
+                                            zonas de descanso, piscinas, así como las comidas son proporcionados por la Finca La Niclala, y no por la Iglesia
+                                            Centro Bíblico Internacional de Cartagena, por lo que declaro que libero de total responsabilidad al Campamento y a
+                                            la Iglesia de los servicios prestados por la Finca La Niclala. También acepto que conozco que empresas privadas
+                                            prestarán el servicio de transporte marítimo desde la ciudad de Cartagena a la Isla Bocachica.
+                                        </p>
+                                        <p className="mt-4 text-slate-700 leading-relaxed">
+                                            En ese sentido, autorizo de manera voluntaria y libre mi participación en el Campamento RELEVANTE CAMP,
+                                            comprometiéndome a dar cumplimiento a las indicaciones generales del campamento que se anexan a este documento,
+                                            por lo que acataré las restricciones que se fijen como necesarias de seguridad y salubridad, así como cumplir con
+                                            las acciones de autocuidado.
+                                        </p>
+                                        <p className="mt-4 text-slate-700 leading-relaxed">
+                                            Por otra parte, siendo que de manera voluntaria expreso mi deseo de autorizar viaje y campamento, me comprometo a
+                                            no presentar ninguna denuncia, queja y/o algún tipo de acción frente a la Iglesia Centro Bíblico Internacional de
+                                            la ciudad de Cartagena. De la misma manera me comprometo llevar equipo de protección personal necesario y requerido
+                                            por el Campamento, así mismo, me comprometo a cumplir todas las normas de bioseguridad establecidas para protegerme,
+                                            proteger a los demás, de manera íntegra y velando por la salud de todos los participantes del viaje y campamento
+                                            conforme a lo dispuesto por los organizadores del evento.
+                                        </p>
+                                        <p className="mt-4 text-slate-700 leading-relaxed">
+                                            Para los efectos legales pertinentes, suscribo el presente documento de forma voluntaria hoy {todayFormatted}.
+                                        </p>
+                                    </>
+                                )}
                             </div>
+
+                            {isMinor && (
+                                <div className="space-y-4 mt-6">
+                                    <label className="flex items-start space-x-3">
+                                        <input
+                                            type="checkbox"
+                                            checked={guardianSelection === "parent"}
+                                            onChange={() => setGuardianSelection("parent")}
+                                            className="mt-3 h-3 w-3 rounded border border-slate-600 accent-blue-600 focus:ring-blue-500 transform scale-150"
+                                        />
+                                        <span className=" text-slate-900 leading-relaxed">
+                                            En virtud de mi participación en el Campamento, me comprometo a velar por la seguridad e integridad de mi hijo(a)
+                                            durante el desarrollo de las actividades, y a colaborar con los organizadores cumpliendo con las normas establecidas
+                                            para el evento.
+                                        </span>
+                                    </label>
+
+                                    <label className="flex items-start space-x-3">
+                                        <input
+                                            type="checkbox"
+                                            checked={guardianSelection === "delegate"}
+                                            onChange={() => setGuardianSelection("delegate")}
+                                            className="mt-3 h-3 w-3 rounded border border-slate-600 accent-blue-600 focus:ring-blue-500 transform scale-150"
+                                        />
+                                        <div className="flex-1 space-y-2">
+                                            <span className="text-slate-900 leading-relaxed block">
+                                                Por medio del presente documento, autorizo a {delegateFullName || "_______________________________"}, identificado con C.C. No. {delegateNationalId || "____________________"},
+                                                para que actúe como responsable de mi hijo(a) durante el Campamento, vele por su seguridad y coopere con los organizadores
+                                                en el cumplimiento de las medidas establecidas para su adecuada ejecución.
+                                            </span>
+                                            <div className="flex items-center gap-3">
+                                                <input
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    placeholder="C.C. del responsable"
+                                                    value={delegateNationalId}
+                                                    onChange={(e) => { setDelegateNationalId(e.target.value); setDelegateFullName(""); }}
+                                                    disabled={guardianSelection !== "delegate"}
+                                                    onBlur={searchDelegateByNationalId}
+                                                    ref={delegateInputRef}
+                                                    className="w-full sm:w-64 px-4 py-2 rounded-xl border border-slate-600 text-slate-900 placeholder-slate-500 shadow-sm disabled:bg-slate-100 disabled:text-slate-400"
+                                                />
+                                                {isSearchingDelegate && (
+                                                    <span className="text-xs text-slate-500">Buscando...</span>
+                                                )}
+                                            </div>
+                                            {guardianSelection === "delegate" && delegateNationalId.trim() && !isSearchingDelegate && !delegateFullName && (
+                                                <p className="text-xs font-semibold text-red-600">No se encontró ninguna persona con esa identificación.</p>
+                                            )}
+                                        </div>
+                                    </label>
+                                </div>
+                            )}
 
                             {submitStatus === "idle" && !isSubmitting && (
                                 <form onSubmit={handleSubmit} className="space-y-8">
@@ -414,7 +583,7 @@ export default function ContractSignClient({
                                                 </button>
                                             </div>
                                         </div>
-                                        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-slate-700">
+                                        <div className="mt-4 col grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-slate-700">
                                             <div>
                                                 <span className="font-semibold">Nombre:</span>
                                                 <span className="ml-2">{participant.names} {participant.last_name_1} {participant.last_name_2}</span>

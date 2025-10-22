@@ -23,6 +23,7 @@ export interface User {
     phone_number: string
     emergency_contact: string
     emergency_contact_phone_number: string
+    document_url?: string
 }
 
 // Function to fetch all people using the RPC

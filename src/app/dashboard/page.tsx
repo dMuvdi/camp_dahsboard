@@ -14,7 +14,8 @@ export default function DashboardPage() {
         p_gender: '',
         p_name: '',
         p_national_id: '',
-        p_checked_in: '' as '' | 'true' | 'false'
+        p_checked_in: '' as '' | 'true' | 'false',
+        p_age_group: '' as '' | 'adults' | 'minors'
     })
     const [isModalOpen, setIsModalOpen] = useState(false)
     const initialFormState = {
@@ -36,6 +37,8 @@ export default function DashboardPage() {
     const [checkoutError, setCheckoutError] = useState<string | null>(null)
     const [isRefreshing, setIsRefreshing] = useState(false)
     const [emailStatus, setEmailStatus] = useState<{ type: 'success' | 'error' | 'loading', message: string } | null>(null)
+    const [isConfirmOpen, setIsConfirmOpen] = useState(false)
+    const [confirmUser, setConfirmUser] = useState<User | null>(null)
     const [isEditing, setIsEditing] = useState(false)
     const [editingUser, setEditingUser] = useState<User | null>(null)
     const router = useRouter()
@@ -58,9 +61,18 @@ export default function DashboardPage() {
             } else {
                 setLoading(true)
             }
-            const data = await getAllPeople(filterParams)
-            const sortedUsers = Array.isArray(data)
-                ? [...data].sort(
+            // Separate non-RPC filters (like age group) from RPC filters
+            const { p_age_group, ...rpcFilters } = filterParams as Record<string, string>
+            const data = await getAllPeople(rpcFilters)
+            const filteredByAge = Array.isArray(data) ? data.filter((u: User) => {
+                if (!p_age_group) return true
+                if (p_age_group === 'minors') return Number(u.age) < 18
+                if (p_age_group === 'adults') return Number(u.age) >= 18
+                return true
+            }) : []
+
+            const sortedUsers = Array.isArray(filteredByAge)
+                ? [...filteredByAge].sort(
                     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
                 )
                 : []
@@ -82,11 +94,11 @@ export default function DashboardPage() {
         fetchUsers({}, { silent: false })
     }, [checkAuth, fetchUsers])
 
-    const getActiveFilters = useCallback((filterValues = filters) =>
-        Object.fromEntries(
+    const getActiveFilters = useCallback((filterValues = filters) => {
+        return Object.fromEntries(
             Object.entries(filterValues).filter(([, v]) => v !== '')
         )
-        , [filters])
+    }, [filters])
 
     const handleFilterChange = (key: string, value: string) => {
         const newFilters = { ...filters, [key]: value }
@@ -112,7 +124,7 @@ export default function DashboardPage() {
         return user.has_signed ? 'Signed' : 'Not Signed'
     }
 
-    const handleEmailUser = async (user: User) => {
+    const sendEmailTo = async (user: User) => {
         try {
             // Show loading state
             setEmailStatus({ type: 'loading', message: 'Sending Email...' })
@@ -142,6 +154,11 @@ export default function DashboardPage() {
             setEmailStatus({ type: 'error', message: 'Oops! Something went wrong. Please try again.' })
             setTimeout(() => setEmailStatus(null), 5000)
         }
+    }
+
+    const handleEmailUser = (user: User) => {
+        setConfirmUser(user)
+        setIsConfirmOpen(true)
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -432,6 +449,50 @@ export default function DashboardPage() {
 
             {/* Main Content */}
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+                {isConfirmOpen && confirmUser && (
+                    <div className="fixed inset-0 z-50">
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsConfirmOpen(false)}></div>
+                        <div className="absolute inset-0 flex items-center justify-center p-4">
+                            <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border-2 border-gray-100 overflow-hidden">
+                                <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between" style={{ backgroundColor: '#f8fafc' }}>
+                                    <h3 className="text-lg font-bold text-gray-900">Send confirmation email</h3>
+                                    <button onClick={() => setIsConfirmOpen(false)} className="text-gray-500 hover:text-gray-700">
+                                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                    </button>
+                                </div>
+                                <div className="px-6 py-5 space-y-3">
+                                    <p className="text-sm text-gray-700">Are you sure you want to send the confirmation email to:</p>
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-10 w-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#9bc3db' }}>
+                                            <span className="text-white font-bold">{confirmUser.names.charAt(0)}</span>
+                                        </div>
+                                        <div className="text-sm">
+                                            <div className="font-bold text-gray-900">{confirmUser.names} {confirmUser.last_name_1} {confirmUser.last_name_2}</div>
+                                            <div className="text-gray-600">{confirmUser.email}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="px-6 py-4 border-t border-gray-100 bg-white flex items-center justify-end gap-3">
+                                    <button onClick={() => setIsConfirmOpen(false)} className="px-5 py-2 rounded-xl text-sm font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition">Cancel</button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const userCopy = confirmUser as User
+                                            setIsConfirmOpen(false)
+                                            setConfirmUser(null)
+                                            // Defer sending to next tick to ensure modal unmounts first
+                                            setTimeout(() => { void sendEmailTo(userCopy) }, 0)
+                                        }}
+                                        className="px-5 py-2 rounded-xl text-sm font-bold text-white shadow-lg transition"
+                                        style={{ backgroundColor: '#9bc3db' }}
+                                    >
+                                        Send
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 {/* Page Header */}
                 <div className="mb-10">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 md:gap-4">
@@ -478,8 +539,24 @@ export default function DashboardPage() {
                             </svg>
                         </div>
                         <h3 className="text-xl font-bold text-gray-900">Filter Participants</h3>
+                        <div className="ml-auto">
+                            <button
+                                onClick={() => {
+                                    const reset = { p_email: '', p_gender: '', p_name: '', p_national_id: '', p_checked_in: '' as '' | 'true' | 'false', p_age_group: '' as '' | 'adults' | 'minors' }
+                                    setFilters(reset)
+                                    fetchUsers({}, { silent: true })
+                                }}
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white shadow-lg hover:shadow-xl transition-all duration-300"
+                                style={{ backgroundColor: '#ef4444' }}
+                            >
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0V5a2 2 0 012-2h3a2 2 0 012 2v2" />
+                                </svg>
+                                Remove filters
+                            </button>
+                        </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-6">
                         <div className="space-y-2">
                             <label className="block text-sm font-bold text-gray-800 mb-3">
                                 Email
@@ -590,6 +667,28 @@ export default function DashboardPage() {
                                     <option value="">All</option>
                                     <option value="true">Checked In</option>
                                     <option value="false">Not Checked In</option>
+                                </select>
+                                <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
+                                    <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="block text-sm font-bold text-gray-800 mb-3">
+                                Age
+                            </label>
+                            <div className="relative">
+                                <select
+                                    className="w-full px-5 py-4 pr-12 border-2 border-gray-200 rounded-2xl bg-white shadow-md text-gray-900 appearance-none transition-all duration-300 focus:border-2 focus:shadow-lg focus:ring-0 focus:outline-none transform focus:scale-[1.02]"
+                                    value={filters.p_age_group}
+                                    onChange={(e) => handleFilterChange('p_age_group', e.target.value)}
+                                >
+                                    <option value="">All</option>
+                                    <option value="minors">Minors (&lt; 18)</option>
+                                    <option value="adults">Adults (≥ 18)</option>
                                 </select>
                                 <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
                                     <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -723,6 +822,9 @@ export default function DashboardPage() {
                                         <th className="px-8 py-6 text-left text-xs font-bold text-white uppercase tracking-wider">
                                             Action
                                         </th>
+                                        <th className="px-8 py-6 text-left text-xs font-bold text-white uppercase tracking-wider">
+                                            Document
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-100">
@@ -835,6 +937,18 @@ export default function DashboardPage() {
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                                     </svg>
                                                     <span>Email</span>
+                                                </button>
+                                            </td>
+                                            <td className="px-8 py-6 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                    onClick={() => { if (user.document_url) window.open(user.document_url, '_blank', 'noopener,noreferrer') }}
+                                                    disabled={!user.document_url}
+                                                    className={`px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 shadow ${user.document_url ? 'text-blue-700 bg-blue-50 hover:bg-blue-100 hover:shadow-md' : 'text-gray-400 bg-gray-100 cursor-not-allowed opacity-60'}`}
+                                                    title={user.document_url ? 'Open document' : 'No document available'}
+                                                >
+                                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7v10a2 2 0 002 2h6a2 2 0 002-2V9.414a2 2 0 00-.586-1.414l-2.414-2.414A2 2 0 0012.586 5H9a2 2 0 00-2 2z" />
+                                                    </svg>
                                                 </button>
                                             </td>
                                         </tr>
