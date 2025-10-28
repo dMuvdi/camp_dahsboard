@@ -37,13 +37,21 @@ export default function ContractSignClient({
     const delegateInputRef = useRef<HTMLInputElement | null>(null);
     const [guardianName, setGuardianName] = useState("");
     const [guardianNationalId, setGuardianNationalId] = useState("");
-
-    const todayFormatted = new Date().toLocaleDateString("es-ES", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-    });
+    const [isValidatingGuardian, setIsValidatingGuardian] = useState(false);
+    const [guardianValidationError, setGuardianValidationError] = useState("");
+    const [todayFormatted, setTodayFormatted] = useState("");
+    const [isMounted, setIsMounted] = useState(false);
     const isMinor = Number(participant.age) < 18;
+
+    // Set mounted state and today's date on client side to avoid hydration mismatch
+    useEffect(() => {
+        setIsMounted(true);
+        setTodayFormatted(new Date().toLocaleDateString("es-ES", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+        }));
+    }, []);
 
     const searchDelegateByNationalId = async () => {
         if (!isMinor) return;
@@ -71,6 +79,31 @@ export default function ContractSignClient({
         }
     };
 
+    const validateGuardianNationalId = async () => {
+        if (!isMinor) return;
+        if (guardianSelection !== "parent") return;
+        const value = guardianNationalId.trim();
+        if (!value) {
+            setGuardianValidationError("");
+            return;
+        }
+        setIsValidatingGuardian(true);
+        setGuardianValidationError("");
+        try {
+            const results = await getAllPeople({ p_national_id: value });
+            if (Array.isArray(results) && results.length === 0) {
+                setGuardianValidationError("Para firmar el contrato debes ser un participante del campamento y estar registrado para el campamento.");
+            } else {
+                // Clear any previous error if validation passes
+                setGuardianValidationError("");
+            }
+        } catch {
+            setGuardianValidationError("Error al validar la información. Intenta nuevamente.");
+        } finally {
+            setIsValidatingGuardian(false);
+        }
+    };
+
     // Programmatically blur the delegate input shortly after typing stops, to trigger onBlur search
     useEffect(() => {
         if (!isMinor) return;
@@ -86,6 +119,21 @@ export default function ContractSignClient({
         }, 600);
         return () => window.clearTimeout(handle);
     }, [isMinor, guardianSelection, delegateNationalId]);
+
+    // Debounced validation for guardian national ID
+    useEffect(() => {
+        if (!isMinor) return;
+        if (guardianSelection !== "parent") return;
+        const value = guardianNationalId.trim();
+        if (!value) {
+            setGuardianValidationError("");
+            return;
+        }
+        const handle = window.setTimeout(() => {
+            validateGuardianNationalId();
+        }, 800);
+        return () => window.clearTimeout(handle);
+    }, [isMinor, guardianSelection, guardianNationalId]);
 
     useEffect(() => {
         const handleResize = () => {
@@ -110,6 +158,28 @@ export default function ContractSignClient({
         handleResize();
         window.addEventListener("resize", handleResize);
         return () => window.removeEventListener("resize", handleResize);
+    }, []);
+
+    // Add touch event listeners with passive: false to prevent scroll
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const handleTouchStart = (e: TouchEvent) => {
+            e.preventDefault();
+        };
+
+        const handleTouchMove = (e: TouchEvent) => {
+            e.preventDefault();
+        };
+
+        canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+        return () => {
+            canvas.removeEventListener('touchstart', handleTouchStart);
+            canvas.removeEventListener('touchmove', handleTouchMove);
+        };
     }, []);
 
     const getCanvasContext = () => {
@@ -226,6 +296,14 @@ export default function ContractSignClient({
                 setError("Por favor ingresa la C.C. del responsable seleccionado.");
                 return;
             }
+            if (guardianValidationError) {
+                setError(guardianValidationError);
+                return;
+            }
+            if (isValidatingGuardian) {
+                setError("Por favor espera mientras validamos tu información.");
+                return;
+            }
         }
 
         setError(null);
@@ -234,82 +312,173 @@ export default function ContractSignClient({
         setPdfUrl(null);
 
         try {
-            // Convert canvas to PNG blob
-            const canvas = canvasRef.current;
-            if (!canvas) throw new Error("No se encontró el lienzo de firma");
+            if (isMinor && guardianSelection === "parent") {
+                // For minors with parent authorization, call create-minor-consent-pdf
+                const canvas = canvasRef.current;
+                if (!canvas) throw new Error("No se encontró el lienzo de firma");
 
-            const signatureBlob: Blob = await new Promise((resolve, reject) => {
-                canvas.toBlob((blob) => {
-                    if (blob) resolve(blob);
-                    else reject(new Error("No se pudo generar la imagen de la firma"));
-                }, "image/png", 1);
-            });
+                const signatureBlob: Blob = await new Promise((resolve, reject) => {
+                    canvas.toBlob((blob) => {
+                        if (blob) resolve(blob);
+                        else reject(new Error("No se pudo generar la imagen de la firma"));
+                    }, "image/png", 1);
+                });
 
-            // Build FormData for Edge Function
-            const formData = new FormData();
-            formData.append("person_id", participant.id);
-            formData.append(
-                "signature",
-                new File([signatureBlob], "signature.png", { type: "image/png" })
-            );
+                // Get guardian ID from database using national_id
+                const guardianResults = await getAllPeople({ p_national_id: guardianNationalId.trim() });
+                if (!Array.isArray(guardianResults) || guardianResults.length === 0) {
+                    throw new Error("No se encontró el padre/madre/tutor en la base de datos");
+                }
+                const guardianId = guardianResults[0].id;
 
-            // Use Supabase anon key for Edge Function authentication
-            const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+                // Build FormData for minor consent PDF Edge Function
+                const formData = new FormData();
+                formData.append("signature_file", new File([signatureBlob], "signature.png", { type: "image/png" }));
+                formData.append("minor_id", participant.id);
+                formData.append("manager_id", guardianId);
 
-            // Call Supabase Edge Function to create PDF
-            const functionsUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/create-consent-pdf`;
-            const response = await fetch(functionsUrl, {
-                method: "POST",
-                headers: {
-                    'Authorization': `Bearer ${anonKey}`,
-                    'apikey': anonKey || '',
-                },
-                body: formData,
-            });
+                // Use Supabase anon key for Edge Function authentication
+                const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-            if (!response.ok) {
-                const text = await response.text();
-                throw new Error(text || "No se pudo generar el PDF");
+                // Call Supabase Edge Function to create minor consent PDF
+                const functionsUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/create-minor-consent-pdf`;
+                const response = await fetch(functionsUrl, {
+                    method: "POST",
+                    headers: {
+                        'Authorization': `Bearer ${anonKey}`,
+                        'apikey': anonKey || '',
+                    },
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text || "No se pudo generar el PDF para menor");
+                }
+
+                const pdfBlob = await response.blob();
+                const url = URL.createObjectURL(pdfBlob);
+                setPdfUrl(url);
+
+                // Update has_signed flag via RPC
+                const { error: updateError } = await supabase.rpc('update_person', {
+                    p_age: participant.age,
+                    p_checked_in: participant.checked_in,
+                    p_checked_out: participant.checked_out,
+                    p_email: participant.email,
+                    p_emergency_contact: participant.emergency_contact,
+                    p_emergency_contact_phone_number: participant.emergency_contact_phone_number,
+                    p_has_signed: true,
+                    p_id: participant.id,
+                    p_last_name_1: participant.last_name_1,
+                    p_last_name_2: participant.last_name_2,
+                    p_names: participant.names,
+                    p_national_id: participant.national_id,
+                    p_phone_number: participant.phone_number
+                });
+
+                if (updateError) {
+                    // Not fatal for user experience, but log for debugging
+                    console.error('Failed to update has_signed:', updateError);
+                }
+
+                setSubmitStatus("success");
+
+                // Scroll to top to show success message
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+
+                // Store PDF URL in sessionStorage for the success page
+                if (url) {
+                    sessionStorage.setItem('pdfUrl', url);
+                    sessionStorage.setItem('participantId', participant.national_id);
+                }
+
+                // Redirect to success page after a short delay
+                setTimeout(() => {
+                    router.push("/success");
+                }, 2000);
+            } else {
+                // For adults, proceed with PDF generation
+                // Convert canvas to PNG blob
+                const canvas = canvasRef.current;
+                if (!canvas) throw new Error("No se encontró el lienzo de firma");
+
+                const signatureBlob: Blob = await new Promise((resolve, reject) => {
+                    canvas.toBlob((blob) => {
+                        if (blob) resolve(blob);
+                        else reject(new Error("No se pudo generar la imagen de la firma"));
+                    }, "image/png", 1);
+                });
+
+                // Build FormData for Edge Function
+                const formData = new FormData();
+                formData.append("person_id", participant.id);
+                formData.append(
+                    "signature",
+                    new File([signatureBlob], "signature.png", { type: "image/png" })
+                );
+
+                // Use Supabase anon key for Edge Function authentication
+                const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+                // Call Supabase Edge Function to create PDF
+                const functionsUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/create-consent-pdf`;
+                const response = await fetch(functionsUrl, {
+                    method: "POST",
+                    headers: {
+                        'Authorization': `Bearer ${anonKey}`,
+                        'apikey': anonKey || '',
+                    },
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text || "No se pudo generar el PDF");
+                }
+
+                const pdfBlob = await response.blob();
+                const url = URL.createObjectURL(pdfBlob);
+                setPdfUrl(url);
+
+                // Update has_signed flag via RPC
+                const { error: updateError } = await supabase.rpc('update_person', {
+                    p_age: participant.age,
+                    p_checked_in: participant.checked_in,
+                    p_checked_out: participant.checked_out,
+                    p_email: participant.email,
+                    p_emergency_contact: participant.emergency_contact,
+                    p_emergency_contact_phone_number: participant.emergency_contact_phone_number,
+                    p_has_signed: true,
+                    p_id: participant.id,
+                    p_last_name_1: participant.last_name_1,
+                    p_last_name_2: participant.last_name_2,
+                    p_names: participant.names,
+                    p_national_id: participant.national_id,
+                    p_phone_number: participant.phone_number
+                });
+
+                if (updateError) {
+                    // Not fatal for user experience, but log for debugging
+                    console.error('Failed to update has_signed:', updateError);
+                }
+
+                setSubmitStatus("success");
+
+                // Scroll to top to show success message
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+
+                // Store PDF URL in sessionStorage for the success page
+                if (url) {
+                    sessionStorage.setItem('pdfUrl', url);
+                    sessionStorage.setItem('participantId', participant.national_id);
+                }
+
+                // Redirect to success page after a short delay
+                setTimeout(() => {
+                    router.push("/success");
+                }, 2000);
             }
-
-            const pdfBlob = await response.blob();
-            const url = URL.createObjectURL(pdfBlob);
-            setPdfUrl(url);
-
-            // Update has_signed flag via RPC
-            const { error: updateError } = await supabase.rpc('update_person', {
-                p_age: participant.age,
-                p_checked_in: participant.checked_in,
-                p_checked_out: participant.checked_out,
-                p_email: participant.email,
-                p_emergency_contact: participant.emergency_contact,
-                p_emergency_contact_phone_number: participant.emergency_contact_phone_number,
-                p_has_signed: true,
-                p_id: participant.id,
-                p_last_name_1: participant.last_name_1,
-                p_last_name_2: participant.last_name_2,
-                p_names: participant.names,
-                p_national_id: participant.national_id,
-                p_phone_number: participant.phone_number
-            });
-
-            if (updateError) {
-                // Not fatal for user experience, but log for debugging
-                console.error('Failed to update has_signed:', updateError);
-            }
-
-            setSubmitStatus("success");
-
-            // Store PDF URL in sessionStorage for the success page
-            if (url) {
-                sessionStorage.setItem('pdfUrl', url);
-                sessionStorage.setItem('participantId', participant.national_id);
-            }
-
-            // Redirect to success page after a short delay
-            setTimeout(() => {
-                router.push("/success");
-            }, 2000);
         } catch (err: unknown) {
             console.error(err);
             setSubmitStatus("error");
@@ -353,7 +522,7 @@ export default function ContractSignClient({
                                     <h2 className="text-2xl font-bold text-slate-900">
                                         {participant.names} {participant.last_name_1} {participant.last_name_2}
                                     </h2>
-                                    {isMinor && (
+                                    {isMounted && isMinor && (
                                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-700 border border-orange-200">
                                             Menor de edad
                                         </span>
@@ -409,7 +578,7 @@ export default function ContractSignClient({
                                     unir a los campistas en prácticas colectivas de actos de oración, culto, enseñanza y festividades de
                                     conformidad a las creencias religiosas que profesamos.
                                 </p>
-                                {isMinor ? (
+                                {isMounted && isMinor ? (
                                     <>
                                         <p className="mt-4 text-slate-700 leading-relaxed">
                                             Yo,
@@ -431,8 +600,16 @@ export default function ContractSignClient({
                                                 className="mx-2 inline-block px-3 py-1 rounded-lg border border-slate-300 text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                 style={{ minWidth: 180 }}
                                             />
+                                            {isValidatingGuardian && (
+                                                <span className="text-xs text-slate-500 ml-2">Validando...</span>
+                                            )}
                                             , en calidad de padre, madre o tutor(a), autorizo la participación de mi hijo(a) {participant.names} {participant.last_name_1} {participant.last_name_2}, identificado(a) con T.I. No. {participant.national_id}, en la actividad RELEVANTE CAMP. Declaro que conozco el listado de actividades programadas para los campistas y acepto su participación en todas, salvo aquellas que se indiquen expresamente en las observaciones o anotaciones.
                                         </p>
+                                        {guardianValidationError && (
+                                            <div className="mt-2 p-3 rounded-lg border border-red-200 bg-red-50">
+                                                <p className="text-sm text-red-700 font-semibold">{guardianValidationError}</p>
+                                            </div>
+                                        )}
                                         <p className="mt-4 text-slate-700 leading-relaxed">
                                             Acepto y entiendo que el personal que dirigirá el Campamento se esfuerza por proporcionar un ambiente seguro y supervisado; sin embargo, reconozco que existen ciertos riesgos inherentes a las actividades al aire libre, así como la posibilidad de situaciones imprevistas. Entiendo que el Campamento adoptará todas las medidas razonables para garantizar la seguridad de los participantes; por ello, eximo de responsabilidad a la Iglesia Centro Bíblico Internacional y a los organizadores del evento por cualquier lesión, pérdida o daño material o personal que pueda ocurrir durante el Campamento, siempre que no medie dolo o culpa grave de su parte.
                                         </p>
@@ -489,13 +666,13 @@ export default function ContractSignClient({
                                             conforme a lo dispuesto por los organizadores del evento.
                                         </p>
                                         <p className="mt-4 text-slate-700 leading-relaxed">
-                                            Para los efectos legales pertinentes, suscribo el presente documento de forma voluntaria hoy {todayFormatted}.
+                                            Para los efectos legales pertinentes, suscribo el presente documento de forma voluntaria hoy {isMounted ? todayFormatted : ""}.
                                         </p>
                                     </>
                                 )}
                             </div>
 
-                            {isMinor && (
+                            {isMounted && isMinor && (
                                 <div className="space-y-4 mt-6">
                                     <label className="flex items-start space-x-3">
                                         <input
@@ -566,8 +743,6 @@ export default function ContractSignClient({
                                                 onPointerUp={handlePointerUp}
                                                 onPointerLeave={handlePointerLeave}
                                                 onPointerCancel={handlePointerUp}
-                                                onTouchStart={(e) => e.preventDefault()}
-                                                onTouchMove={(e) => e.preventDefault()}
                                                 onContextMenu={(e) => e.preventDefault()}
                                             />
                                             <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
