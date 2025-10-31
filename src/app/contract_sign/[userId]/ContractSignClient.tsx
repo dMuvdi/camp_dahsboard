@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, getAllPeople } from "@/lib/supabase";
 import type { User } from "@/lib/supabase";
@@ -34,7 +34,6 @@ export default function ContractSignClient({
     const [delegateNationalId, setDelegateNationalId] = useState("");
     const [delegateFullName, setDelegateFullName] = useState("");
     const [isSearchingDelegate, setIsSearchingDelegate] = useState(false);
-    const delegateInputRef = useRef<HTMLInputElement | null>(null);
     const [guardianName, setGuardianName] = useState("");
     const [guardianNationalId, setGuardianNationalId] = useState("");
     const [isValidatingGuardian, setIsValidatingGuardian] = useState(false);
@@ -53,10 +52,10 @@ export default function ContractSignClient({
         }));
     }, []);
 
-    const searchDelegateByNationalId = async () => {
+    const searchDelegateByNationalId = useCallback(async (searchValue: string) => {
         if (!isMinor) return;
         if (guardianSelection !== "delegate") return;
-        const value = delegateNationalId.trim();
+        const value = searchValue.trim();
         if (!value) {
             setDelegateFullName("");
             return;
@@ -66,9 +65,14 @@ export default function ContractSignClient({
             const results = await getAllPeople({ p_national_id: value });
             if (Array.isArray(results) && results.length > 0) {
                 const person = results[0];
-                const full = `${person.names} ${person.last_name_1} ${person.last_name_2}`.trim();
-                setDelegateFullName(full);
-                // Keep the typed national ID as-is (no auto-complete), only fill the name
+                // Check for exact match - national_id must exactly match what was typed
+                if (person.national_id === value) {
+                    const full = `${person.names} ${person.last_name_1} ${person.last_name_2}`.trim();
+                    setDelegateFullName(full);
+                } else {
+                    // Not an exact match, clear the name
+                    setDelegateFullName("");
+                }
             } else {
                 setDelegateFullName("");
             }
@@ -77,7 +81,7 @@ export default function ContractSignClient({
         } finally {
             setIsSearchingDelegate(false);
         }
-    };
+    }, [isMinor, guardianSelection]);
 
     const validateGuardianNationalId = async () => {
         if (!isMinor) return;
@@ -104,21 +108,22 @@ export default function ContractSignClient({
         }
     };
 
-    // Programmatically blur the delegate input shortly after typing stops, to trigger onBlur search
+    // Debounced search for delegate - only search after user stops typing
     useEffect(() => {
         if (!isMinor) return;
         if (guardianSelection !== "delegate") return;
         const value = delegateNationalId.trim();
-        // If empty, ensure name is blank and don't schedule blur
+        // If empty, ensure name is blank and don't schedule search
         if (!value) {
             setDelegateFullName("");
             return;
         }
+        // Wait for user to stop typing before searching (800ms delay)
         const handle = window.setTimeout(() => {
-            delegateInputRef.current?.blur();
-        }, 600);
+            searchDelegateByNationalId(value);
+        }, 800);
         return () => window.clearTimeout(handle);
-    }, [isMinor, guardianSelection, delegateNationalId]);
+    }, [isMinor, guardianSelection, delegateNationalId, searchDelegateByNationalId]);
 
     // Debounced validation for guardian national ID
     useEffect(() => {
@@ -288,20 +293,22 @@ export default function ContractSignClient({
         }
 
         if (isMinor) {
-            if (!guardianName.trim() || !guardianNationalId.trim()) {
-                setError("Por favor ingresa tu nombre y C.C. como padre/madre/tutor(a).");
-                return;
+            if (guardianSelection === "parent") {
+                if (!guardianName.trim() || !guardianNationalId.trim()) {
+                    setError("Por favor ingresa tu nombre y C.C. como padre/madre/tutor(a).");
+                    return;
+                }
+                if (guardianValidationError) {
+                    setError(guardianValidationError);
+                    return;
+                }
+                if (isValidatingGuardian) {
+                    setError("Por favor espera mientras validamos tu información.");
+                    return;
+                }
             }
             if (guardianSelection === "delegate" && !delegateNationalId.trim()) {
                 setError("Por favor ingresa la C.C. del responsable seleccionado.");
-                return;
-            }
-            if (guardianValidationError) {
-                setError(guardianValidationError);
-                return;
-            }
-            if (isValidatingGuardian) {
-                setError("Por favor espera mientras validamos tu información.");
                 return;
             }
         }
@@ -397,6 +404,52 @@ export default function ContractSignClient({
                 setTimeout(() => {
                     router.push("/success");
                 }, 2000);
+            } else if (isMinor && guardianSelection === "delegate") {
+                // For minors with delegate authorization, call minor-second-option-manager-assignment
+                const canvas = canvasRef.current;
+                if (!canvas) throw new Error("No se encontró el lienzo de firma");
+
+                const signatureBlob: Blob = await new Promise((resolve, reject) => {
+                    canvas.toBlob((blob) => {
+                        if (blob) resolve(blob);
+                        else reject(new Error("No se pudo generar la imagen de la firma"));
+                    }, "image/png", 1);
+                });
+
+                // Get guardian ID from database using delegate national_id (from the delegate input field)
+                const guardianResults = await getAllPeople({ p_national_id: delegateNationalId.trim() });
+                if (!Array.isArray(guardianResults) || guardianResults.length === 0) {
+                    throw new Error("No se encontró el responsable seleccionado en la base de datos");
+                }
+                const guardianId = guardianResults[0].id;
+
+                // Build FormData for minor consent PDF Edge Function
+                const formData = new FormData();
+                formData.append("signature_file", new File([signatureBlob], "signature.png", { type: "image/png" }));
+                formData.append("minor_id", participant.id);
+                formData.append("manager_id", guardianId);
+                formData.append("tutor_name", guardianName);
+                formData.append("tutor_national_id", guardianNationalId);
+
+                // Use Supabase anon key for Edge Function authentication
+                const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+                // Call Supabase Edge Function to create minor consent PDF
+                const functionsUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/minor-second-option-manager-assignment`;
+                const response = await fetch(functionsUrl, {
+                    method: "POST",
+                    headers: {
+                        'Authorization': `Bearer ${anonKey}`,
+                        'apikey': anonKey || '',
+                    },
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text || "No se pudo generar el PDF para menor");
+                }
+
             } else {
                 // For adults, proceed with PDF generation
                 // Convert canvas to PNG blob
@@ -600,12 +653,12 @@ export default function ContractSignClient({
                                                 className="mx-2 inline-block px-3 py-1 rounded-lg border border-slate-300 text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                 style={{ minWidth: 180 }}
                                             />
-                                            {isValidatingGuardian && (
+                                            {guardianSelection === "parent" && isValidatingGuardian && (
                                                 <span className="text-xs text-slate-500 ml-2">Validando...</span>
                                             )}
                                             , en calidad de padre, madre o tutor(a), autorizo la participación de mi hijo(a) {participant.names} {participant.last_name_1} {participant.last_name_2}, identificado(a) con T.I. No. {participant.national_id}, en la actividad RELEVANTE CAMP. Declaro que conozco el listado de actividades programadas para los campistas y acepto su participación en todas, salvo aquellas que se indiquen expresamente en las observaciones o anotaciones.
                                         </p>
-                                        {guardianValidationError && (
+                                        {guardianSelection === "parent" && guardianValidationError && (
                                             <div className="mt-2 p-3 rounded-lg border border-red-200 bg-red-50">
                                                 <p className="text-sm text-red-700 font-semibold">{guardianValidationError}</p>
                                             </div>
@@ -709,8 +762,6 @@ export default function ContractSignClient({
                                                     value={delegateNationalId}
                                                     onChange={(e) => { setDelegateNationalId(e.target.value); setDelegateFullName(""); }}
                                                     disabled={guardianSelection !== "delegate"}
-                                                    onBlur={searchDelegateByNationalId}
-                                                    ref={delegateInputRef}
                                                     className="w-full sm:w-64 px-4 py-2 rounded-xl border border-slate-600 text-slate-900 placeholder-slate-500 shadow-sm disabled:bg-slate-100 disabled:text-slate-400"
                                                 />
                                                 {isSearchingDelegate && (

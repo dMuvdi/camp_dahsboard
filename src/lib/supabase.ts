@@ -24,6 +24,9 @@ export interface User {
     emergency_contact: string
     emergency_contact_phone_number: string
     document_url?: string
+    tutor_name?: string
+    tutor_national_id?: string
+    manager_id?: string
 }
 
 // Function to fetch all people using the RPC
