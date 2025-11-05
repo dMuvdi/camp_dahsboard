@@ -129,15 +129,23 @@ export default function DashboardPage() {
             // Show loading state
             setEmailStatus({ type: 'loading', message: 'Sending Email...' })
 
+            // Determine the correct URL based on age
+            const isMinor = Number(user.age) < 18;
+            const signingUrl = isMinor
+                ? `https://camp-dahsboard.vercel.app/delegate_signature/${user.id}`
+                : `https://camp-dahsboard.vercel.app/contract_sign/${user.id}`;
+
             const res = await fetch('/api/send-email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     to: user.email,
-                    subject: 'Relevante Camp - Your QR Code',
-                    text: 'Hola! Este es tu código QR para el campamento.',
+                    subject: 'Firma de Consentimiento - Relevante Camp',
+                    text: `Hola ${user.names}! Este es el link para firmar tu consentimiento: ${signingUrl}`,
                     userId: user.id,
-                    fullName: `${user.names} ${user.last_name_1} ${user.last_name_2}`.trim()
+                    fullName: `${user.names} ${user.last_name_1} ${user.last_name_2}`.trim(),
+                    emailType: 'contract',
+                    contractUrl: signingUrl
                 })
             })
             if (!res.ok) {

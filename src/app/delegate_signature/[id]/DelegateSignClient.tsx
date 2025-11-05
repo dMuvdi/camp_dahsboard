@@ -288,6 +288,27 @@ export default function DelegateSignClient({
             const url = URL.createObjectURL(pdfBlob);
             setPdfUrl(url);
 
+            // Build FormData for minor consent PDF Edge Function
+            const consentFormData = new FormData();
+            consentFormData.append("signature_file", new File([signatureBlob], "signature.png", { type: "image/png" }));
+            consentFormData.append("minor_id", minor.id);
+
+            // Call Supabase Edge Function to create minor consent PDF
+            const consentFunctionsUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/create-minor-second-option-consent-pdf`;
+            const consentResponse = await fetch(consentFunctionsUrl, {
+                method: "POST",
+                headers: {
+                    'Authorization': `Bearer ${anonKey}`,
+                    'apikey': anonKey || '',
+                },
+                body: consentFormData,
+            });
+
+            if (!consentResponse.ok) {
+                const text = await consentResponse.text();
+                throw new Error(text || "No se pudo generar el PDF de consentimiento para menor");
+            }
+
             // Update has_signed flag via RPC
             const { error: updateError } = await supabase.rpc('update_person', {
                 p_age: minor.age,
@@ -426,7 +447,7 @@ export default function DelegateSignClient({
                                 </p>
                                 <p className="mt-4 text-slate-700 leading-relaxed">
                                     Yo, {minor.tutor_name || "_______________________________"}, identificado(a) con C.C. No. {minor.tutor_national_id || "____________________"},
-                                    , en calidad de padre, madre o tutor(a), autorizo la participación de mi hijo(a) {minor.names} {minor.last_name_1} {minor.last_name_2}, identificado(a) con T.I. No. {minor.national_id}, en la actividad RELEVANTE CAMP. Declaro que conozco el listado de actividades programadas para los campistas y acepto su participación en todas, salvo aquellas que se indiquen expresamente en las observaciones o anotaciones.
+                                    en calidad de padre, madre o tutor(a), autorizo la participación de mi hijo(a) {minor.names} {minor.last_name_1} {minor.last_name_2}, identificado(a) con T.I. No. {minor.national_id}, en la actividad RELEVANTE CAMP. Declaro que conozco el listado de actividades programadas para los campistas y acepto su participación en todas, salvo aquellas que se indiquen expresamente en las observaciones o anotaciones.
                                 </p>
                                 <p className="mt-4 text-slate-700 leading-relaxed">
                                     Acepto y entiendo que el personal que dirigirá el Campamento se esfuerza por proporcionar un ambiente seguro y supervisado; sin embargo, reconozco que existen ciertos riesgos inherentes a las actividades al aire libre, así como la posibilidad de situaciones imprevistas. Entiendo que el Campamento adoptará todas las medidas razonables para garantizar la seguridad de los participantes; por ello, eximo de responsabilidad a la Iglesia Centro Bíblico Internacional y a los organizadores del evento por cualquier lesión, pérdida o daño material o personal que pueda ocurrir durante el Campamento, siempre que no medie dolo o culpa grave de su parte.
