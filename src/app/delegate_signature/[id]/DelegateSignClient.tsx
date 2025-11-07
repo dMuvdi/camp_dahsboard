@@ -258,37 +258,6 @@ export default function DelegateSignClient({
             const managerId = managerResults[0].id;
 
             // Build FormData for minor consent PDF Edge Function
-            const formData = new FormData();
-            formData.append("signature_file", new File([signatureBlob], "signature.png", { type: "image/png" }));
-            formData.append("minor_id", minor.id);
-            formData.append("manager_id", managerId);
-            formData.append("tutor_name", minor.tutor_name || "");
-            formData.append("tutor_national_id", minor.tutor_national_id || "");
-
-            // Use Supabase anon key for Edge Function authentication
-            const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-            // Call Supabase Edge Function to create minor consent PDF
-            const functionsUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/minor-second-option-manager-assignment`;
-            const response = await fetch(functionsUrl, {
-                method: "POST",
-                headers: {
-                    'Authorization': `Bearer ${anonKey}`,
-                    'apikey': anonKey || '',
-                },
-                body: formData,
-            });
-
-            if (!response.ok) {
-                const text = await response.text();
-                throw new Error(text || "No se pudo generar el PDF para menor");
-            }
-
-            const pdfBlob = await response.blob();
-            const url = URL.createObjectURL(pdfBlob);
-            setPdfUrl(url);
-
-            // Build FormData for minor consent PDF Edge Function
             const consentFormData = new FormData();
             consentFormData.append("signature_file", new File([signatureBlob], "signature.png", { type: "image/png" }));
             consentFormData.append("minor_id", minor.id);
@@ -298,8 +267,8 @@ export default function DelegateSignClient({
             const consentResponse = await fetch(consentFunctionsUrl, {
                 method: "POST",
                 headers: {
-                    'Authorization': `Bearer ${anonKey}`,
-                    'apikey': anonKey || '',
+                    'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+                    'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
                 },
                 body: consentFormData,
             });
@@ -331,21 +300,29 @@ export default function DelegateSignClient({
                 console.error('Failed to update has_signed:', updateError);
             }
 
+            // Send QR code email
+            try {
+                await fetch('/api/send-email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        to: minor.email,
+                        subject: 'Relevante Camp - Tu QR de acceso',
+                        text: `Hola ${minor.names}! Aquí tienes tu QR para el campamento.`,
+                        userId: minor.id,
+                        fullName: `${minor.names} ${minor.last_name_1} ${minor.last_name_2}`.trim(),
+                        emailType: 'ticket'
+                    })
+                });
+            } catch (emailError) {
+                console.error('Failed to send QR email:', emailError);
+            }
+
             setSubmitStatus("success");
 
             // Scroll to top to show success message
             window.scrollTo({ top: 0, behavior: 'smooth' });
 
-            // Store PDF URL in sessionStorage for the success page
-            if (url) {
-                sessionStorage.setItem('pdfUrl', url);
-                sessionStorage.setItem('participantId', minor.national_id);
-            }
-
-            // Redirect to success page after a short delay
-            setTimeout(() => {
-                router.push("/success");
-            }, 2000);
         } catch (err: unknown) {
             console.error(err);
             setSubmitStatus("error");
@@ -410,8 +387,7 @@ export default function DelegateSignClient({
                                     </svg>
                                 </div>
                                 <h3 className="mt-6 text-2xl font-extrabold text-green-800">¡Firma enviada con éxito!</h3>
-                                <p className="mt-2 text-green-800/80">Tu consentimiento ha sido registrado correctamente.</p>
-                                <p className="mt-2 text-green-700 text-sm">Redirigiendo en unos momentos...</p>
+                                <p className="mt-2 text-green-800/80">El consentimiento del menor a tu cargo ha sido registrado correctamente.</p>
                             </div>
                         )}
 

@@ -510,6 +510,18 @@ export default function DashboardPage() {
                         </div>
                         <div className="flex flex-col md:flex-row items-center justify-center md:justify-end gap-4">
                             <button
+                                onClick={() => { void fetchUsers(getActiveFilters(), { silent: false }); }}
+                                className="px-8 py-3.5 rounded-2xl text-sm font-bold text-white shadow-xl transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl flex items-center space-x-2"
+                                style={{ backgroundColor: '#1d5c81' }}
+                                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#174965')}
+                                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#1d5c81')}
+                            >
+                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9M20 20v-5h-.581m-15.357-2a8.003 8.003 0 0015.357 2" />
+                                </svg>
+                                <span>Refresh</span>
+                            </button>
+                            <button
                                 onClick={() => setIsModalOpen(true)}
                                 className="px-8 py-3.5 rounded-2xl text-sm font-bold text-white shadow-xl transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl flex items-center space-x-2"
                                 style={{ backgroundColor: '#9bc3db' }}

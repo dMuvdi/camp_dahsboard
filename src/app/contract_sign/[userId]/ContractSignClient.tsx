@@ -28,7 +28,7 @@ export default function ContractSignClient({
     const [acceptTerms, setAcceptTerms] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [submitStatus, setSubmitStatus] = useState<"idle" | "success" | "error">("idle");
+    const [submitStatus, setSubmitStatus] = useState<"idle" | "success" | "success_minor_1" | "success_minor_2" | "error">("idle");
     const [pdfUrl, setPdfUrl] = useState<string | null>(null);
     const [guardianSelection, setGuardianSelection] = useState<"parent" | "delegate" | null>("parent");
     const [delegateNationalId, setDelegateNationalId] = useState("");
@@ -97,6 +97,12 @@ export default function ContractSignClient({
             const results = await getAllPeople({ p_national_id: value });
             if (Array.isArray(results) && results.length === 0) {
                 setGuardianValidationError("Para firmar el contrato debes ser un participante del campamento y estar registrado para el campamento.");
+            } else if (results[0].national_id !== guardianNationalId) {
+                setGuardianValidationError("La C.C. ingresada no coincide con la de ningún participante del campamento.");
+            } else if (results[0].has_signed) {
+                setGuardianValidationError("El participante ya ha firmado el contrato.");
+            } else if (results[0].age < 18) {
+                setGuardianValidationError("El participante es menor de edad y no puede firmar el contrato.");
             } else {
                 // Clear any previous error if validation passes
                 setGuardianValidationError("");
@@ -389,21 +395,29 @@ export default function ContractSignClient({
                     console.error('Failed to update has_signed:', updateError);
                 }
 
-                setSubmitStatus("success");
+                // Send QR code email
+                try {
+                    await fetch('/api/send-email', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            to: participant.email,
+                            subject: 'Relevante Camp - Tu QR de acceso',
+                            text: `Hola ${participant.names}! Aquí tienes tu QR para el campamento.`,
+                            userId: participant.id,
+                            fullName: `${participant.names} ${participant.last_name_1} ${participant.last_name_2}`.trim(),
+                            emailType: 'ticket'
+                        })
+                    });
+                } catch (emailError) {
+                    console.error('Failed to send QR email:', emailError);
+                }
+
+                setSubmitStatus("success_minor_1");
 
                 // Scroll to top to show success message
                 window.scrollTo({ top: 0, behavior: 'smooth' });
 
-                // Store PDF URL in sessionStorage for the success page
-                if (url) {
-                    sessionStorage.setItem('pdfUrl', url);
-                    sessionStorage.setItem('participantId', participant.national_id);
-                }
-
-                // Redirect to success page after a short delay
-                setTimeout(() => {
-                    router.push("/success");
-                }, 2000);
             } else if (isMinor && guardianSelection === "delegate") {
                 // For minors with delegate authorization, call minor-second-option-manager-assignment
                 const canvas = canvasRef.current;
@@ -449,6 +463,11 @@ export default function ContractSignClient({
                     const text = await response.text();
                     throw new Error(text || "No se pudo generar el PDF para menor");
                 }
+
+                setSubmitStatus("success_minor_2");
+
+                // Scroll to top to show success message
+                window.scrollTo({ top: 0, behavior: 'smooth' });
 
             } else {
                 // For adults, proceed with PDF generation
@@ -514,6 +533,24 @@ export default function ContractSignClient({
                 if (updateError) {
                     // Not fatal for user experience, but log for debugging
                     console.error('Failed to update has_signed:', updateError);
+                }
+
+                // Send QR code email
+                try {
+                    await fetch('/api/send-email', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            to: participant.email,
+                            subject: 'Relevante Camp - Tu QR de acceso',
+                            text: `Hola ${participant.names}! Aquí tienes tu QR para el campamento.`,
+                            userId: participant.id,
+                            fullName: `${participant.names} ${participant.last_name_1} ${participant.last_name_2}`.trim(),
+                            emailType: 'ticket'
+                        })
+                    });
+                } catch (emailError) {
+                    console.error('Failed to send QR email:', emailError);
                 }
 
                 setSubmitStatus("success");
@@ -587,6 +624,55 @@ export default function ContractSignClient({
                     </header>
 
                     <article className="px-8 py-8 space-y-8">
+
+                        {!isSubmitting && submitStatus === "success_minor_1" && pdfUrl && (
+                            <div className="rounded-3xl border-2 border-green-200 bg-green-50 p-8 text-center shadow-xl">
+                                <div className="mx-auto h-14 w-14 rounded-full bg-green-500 flex items-center justify-center">
+                                    <svg className="h-8 w-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                </div>
+                                <h3 className="mt-6 text-2xl font-extrabold text-green-800">¡Firma enviada con éxito!</h3>
+                                <p className="mt-2 text-green-800/80">El consentimiento de tu hijo(a) ha sido registrado correctamente. Aquí tienes el PDF para que lo imprima o descargue:</p>
+                                <a href={pdfUrl} target="_blank" rel="noopener noreferrer" className="mt-2 text-green-800/80">
+                                    <button className="px-6 py-3 rounded-2xl text-sm font-bold text-white shadow-xl" style={{ backgroundColor: "#9bc3db" }}>
+                                        Ver PDF
+                                    </button>
+                                </a>
+                                {pdfUrl && (
+                                    <button
+                                        className="ml-4 px-6 py-3 rounded-2xl text-sm font-bold text-white shadow-xl"
+                                        style={{ backgroundColor: "#1d5c81" }}
+                                        onClick={() => {
+                                            // Create a temporary <a> element to force download
+                                            const link = document.createElement('a');
+                                            link.href = pdfUrl;
+                                            link.download = "consentimiento.pdf";
+                                            document.body.appendChild(link);
+                                            link.click();
+                                            document.body.removeChild(link);
+                                        }}
+                                    >
+                                        Descargar PDF
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+
+                        {!isSubmitting && submitStatus === "success_minor_2" && (
+                            <div className="rounded-3xl border-2 border-green-200 bg-green-50 p-8 text-center shadow-xl">
+                                <div className="mx-auto h-14 w-14 rounded-full bg-green-500 flex items-center justify-center">
+                                    <svg className="h-8 w-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                </div>
+                                <h3 className="mt-6 text-2xl font-extrabold text-green-800">¡Firma enviada con éxito!</h3>
+                                <p className="mt-2 text-green-800/80">El responsable asignado será notificado por correo electrónico para completar el proceso.</p>
+                            </div>
+                        )}
+
+
 
                         {!isSubmitting && submitStatus === "success" && (
                             <div className="rounded-3xl border-2 border-green-200 bg-green-50 p-8 text-center shadow-xl">
