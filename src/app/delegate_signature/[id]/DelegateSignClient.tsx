@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, getAllPeople } from "@/lib/supabase";
 import type { User } from "@/lib/supabase";
@@ -35,6 +35,34 @@ export default function DelegateSignClient({
     const [isLoadingManager, setIsLoadingManager] = useState(true);
     const [todayFormatted, setTodayFormatted] = useState("");
     const [isMounted, setIsMounted] = useState(false);
+
+    const resizeCanvas = useCallback(() => {
+        const canvas = canvasRef.current;
+        const container = containerRef.current;
+        if (!canvas || !container) return;
+
+        const context = canvas.getContext("2d");
+        if (!context) return;
+
+        let imageData: ImageData | null = null;
+        try {
+            if (canvas.width > 0 && canvas.height > 0) {
+                imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            }
+        } catch (err) {
+            imageData = null;
+        }
+
+        const { width } = container.getBoundingClientRect();
+        const height = Math.max(180, width * 0.4);
+
+        canvas.width = width;
+        canvas.height = height;
+
+        if (imageData && imageData.width && imageData.height) {
+            context.putImageData(imageData, 0, 0);
+        }
+    }, []);
 
     // Fetch manager data using manager_id
     useEffect(() => {
@@ -83,29 +111,10 @@ export default function DelegateSignClient({
     }, []);
 
     useEffect(() => {
-        const handleResize = () => {
-            const canvas = canvasRef.current;
-            const container = containerRef.current;
-            if (!canvas || !container) return;
-
-            const context = canvas.getContext("2d");
-            if (!context) return;
-
-            const { width } = container.getBoundingClientRect();
-            const height = Math.max(180, width * 0.4);
-
-            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-
-            canvas.width = width;
-            canvas.height = height;
-
-            context.putImageData(imageData, 0, 0);
-        };
-
-        handleResize();
-        window.addEventListener("resize", handleResize);
-        return () => window.removeEventListener("resize", handleResize);
-    }, []);
+        resizeCanvas();
+        window.addEventListener("resize", resizeCanvas);
+        return () => window.removeEventListener("resize", resizeCanvas);
+    }, [resizeCanvas]);
 
     // Add touch event listeners with passive: false to prevent scroll
     useEffect(() => {
@@ -210,8 +219,15 @@ export default function DelegateSignClient({
         if (!canvas || !context) return;
 
         context.clearRect(0, 0, canvas.width, canvas.height);
+        resizeCanvas();
         setSignature({ hasDrawn: false, strokes: [] });
         setError(null);
+    };
+
+    const handleRetry = () => {
+        handleClearSignature();
+        setSubmitStatus("idle");
+        setPdfUrl(null);
     };
 
     const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -325,6 +341,7 @@ export default function DelegateSignClient({
 
         } catch (err: unknown) {
             console.error(err);
+            handleClearSignature();
             setSubmitStatus("error");
             setError(err instanceof Error ? err.message : "Ocurrió un error al enviar la firma.");
         } finally {
@@ -403,7 +420,7 @@ export default function DelegateSignClient({
                                 <div className="mt-6">
                                     <button
                                         type="button"
-                                        onClick={() => setSubmitStatus("idle")}
+                                        onClick={handleRetry}
                                         className="px-6 py-3 rounded-2xl text-sm font-bold text-white shadow-xl"
                                         style={{ backgroundColor: "#9bc3db" }}
                                     >

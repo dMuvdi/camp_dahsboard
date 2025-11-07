@@ -42,6 +42,34 @@ export default function ContractSignClient({
     const [isMounted, setIsMounted] = useState(false);
     const isMinor = Number(participant.age) < 18;
 
+    const resizeCanvas = useCallback(() => {
+        const canvas = canvasRef.current;
+        const container = containerRef.current;
+        if (!canvas || !container) return;
+
+        const context = canvas.getContext("2d");
+        if (!context) return;
+
+        let imageData: ImageData | null = null;
+        try {
+            if (canvas.width > 0 && canvas.height > 0) {
+                imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            }
+        } catch (err) {
+            imageData = null;
+        }
+
+        const { width } = container.getBoundingClientRect();
+        const height = Math.max(180, width * 0.4);
+
+        canvas.width = width;
+        canvas.height = height;
+
+        if (imageData && imageData.width && imageData.height) {
+            context.putImageData(imageData, 0, 0);
+        }
+    }, []);
+
     // Set mounted state and today's date on client side to avoid hydration mismatch
     useEffect(() => {
         setIsMounted(true);
@@ -147,29 +175,10 @@ export default function ContractSignClient({
     }, [isMinor, guardianSelection, guardianNationalId]);
 
     useEffect(() => {
-        const handleResize = () => {
-            const canvas = canvasRef.current;
-            const container = containerRef.current;
-            if (!canvas || !container) return;
-
-            const context = canvas.getContext("2d");
-            if (!context) return;
-
-            const { width } = container.getBoundingClientRect();
-            const height = Math.max(180, width * 0.4);
-
-            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-
-            canvas.width = width;
-            canvas.height = height;
-
-            context.putImageData(imageData, 0, 0);
-        };
-
-        handleResize();
-        window.addEventListener("resize", handleResize);
-        return () => window.removeEventListener("resize", handleResize);
-    }, []);
+        resizeCanvas();
+        window.addEventListener("resize", resizeCanvas);
+        return () => window.removeEventListener("resize", resizeCanvas);
+    }, [resizeCanvas]);
 
     // Add touch event listeners with passive: false to prevent scroll
     useEffect(() => {
@@ -274,8 +283,15 @@ export default function ContractSignClient({
         if (!canvas || !context) return;
 
         context.clearRect(0, 0, canvas.width, canvas.height);
+        resizeCanvas();
         setSignature({ hasDrawn: false, strokes: [] });
         setError(null);
+    };
+
+    const handleRetry = () => {
+        handleClearSignature();
+        setSubmitStatus("idle");
+        setPdfUrl(null);
     };
 
     const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -571,6 +587,7 @@ export default function ContractSignClient({
             }
         } catch (err: unknown) {
             console.error(err);
+            handleClearSignature();
             setSubmitStatus("error");
             setError(err instanceof Error ? err.message : "Ocurrió un error al enviar la firma.");
         } finally {
@@ -699,7 +716,7 @@ export default function ContractSignClient({
                                 <div className="mt-6">
                                     <button
                                         type="button"
-                                        onClick={() => setSubmitStatus("idle")}
+                                        onClick={handleRetry}
                                         className="px-6 py-3 rounded-2xl text-sm font-bold text-white shadow-xl"
                                         style={{ backgroundColor: "#9bc3db" }}
                                     >
