@@ -158,9 +158,7 @@ export default function DashboardPage() {
 
             // Determine the correct URL based on age
             const isMinor = Number(user.age) < 18;
-            const signingUrl = isMinor
-                ? `https://camp-dahsboard.vercel.app/delegate_signature/${user.id}`
-                : `https://camp-dahsboard.vercel.app/contract_sign/${user.id}`;
+            const signingUrl = `https://camp-dahsboard.vercel.app/contract_sign/${user.id}`;
 
             const res = await fetch('/api/send-email', {
                 method: 'POST',
