@@ -41,6 +41,7 @@ export default function DashboardPage() {
     const [confirmUser, setConfirmUser] = useState<User | null>(null)
     const [isEditing, setIsEditing] = useState(false)
     const [editingUser, setEditingUser] = useState<User | null>(null)
+    const [managerNames, setManagerNames] = useState<Record<string, string>>({})
     const router = useRouter()
 
     const checkAuth = useCallback(async () => {
@@ -77,6 +78,32 @@ export default function DashboardPage() {
                 )
                 : []
             setUsers(sortedUsers)
+
+            const managerIds = Array.isArray(filteredByAge)
+                ? [...new Set(filteredByAge
+                    .map((u: User) => u.manager_id)
+                    .filter((id): id is string => typeof id === 'string' && id.length > 0))]
+                : []
+
+            if (managerIds.length > 0) {
+                const { data: managers, error: managersError } = await supabase
+                    .from('People')
+                    .select('id, names, last_name_1, last_name_2')
+                    .in('id', managerIds)
+
+                if (!managersError && Array.isArray(managers)) {
+                    const mapping: Record<string, string> = {}
+                    managers.forEach((manager) => {
+                        mapping[manager.id as string] = `${manager.names ?? ''} ${manager.last_name_1 ?? ''} ${manager.last_name_2 ?? ''}`.trim()
+                    })
+                    setManagerNames(mapping)
+                } else {
+                    console.error('Failed to fetch managers', managersError)
+                    setManagerNames({})
+                }
+            } else {
+                setManagerNames({})
+            }
         } catch (err) {
             setError('Failed to fetch users')
             console.error(err)
@@ -837,6 +864,9 @@ export default function DashboardPage() {
                                             Has Signed
                                         </th>
                                         <th className="px-8 py-6 text-left text-xs font-bold text-white uppercase tracking-wider">
+                                            Manager
+                                        </th>
+                                        <th className="px-8 py-6 text-left text-xs font-bold text-white uppercase tracking-wider">
                                             Created
                                         </th>
                                         <th className="px-8 py-6 text-left text-xs font-bold text-white uppercase tracking-wider">
@@ -941,6 +971,11 @@ export default function DashboardPage() {
                                                 <span className={`inline-flex px-4 py-2 text-xs font-bold rounded-2xl shadow-md ${getSignedStatusColor(user)}`}>
                                                     {getSignedStatusText(user)}
                                                 </span>
+                                            </td>
+                                            <td className="px-8 py-6 whitespace-nowrap text-sm font-medium text-gray-600">
+                                                {user.manager_id
+                                                    ? (managerNames[user.manager_id] || 'Cargando...')
+                                                    : '—'}
                                             </td>
                                             <td className="px-8 py-6 whitespace-nowrap text-sm font-medium text-gray-600">
                                                 {new Date(user.created_at).toLocaleDateString()}
