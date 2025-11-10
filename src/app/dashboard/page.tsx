@@ -41,7 +41,9 @@ export default function DashboardPage() {
     const [confirmUser, setConfirmUser] = useState<User | null>(null)
     const [isEditing, setIsEditing] = useState(false)
     const [editingUser, setEditingUser] = useState<User | null>(null)
+    const [isDeleting, setIsDeleting] = useState(false)
     const [managerNames, setManagerNames] = useState<Record<string, string>>({})
+    const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
     const router = useRouter()
 
     const checkAuth = useCallback(async () => {
@@ -355,7 +357,10 @@ export default function DashboardPage() {
     const closeModal = () => {
         setIsModalOpen(false)
         resetForm()
+        setFormSubmitError('')
         setIsSubmitting(false)
+        setIsDeleting(false)
+        setIsDeleteConfirmOpen(false)
         setIsEditing(false)
         setEditingUser(null)
     }
@@ -440,6 +445,34 @@ export default function DashboardPage() {
         }
     }
 
+    const handleDeleteParticipant = async () => {
+        if (!editingUser) return
+
+        setIsDeleting(true)
+        setFormSubmitError('')
+        try {
+            const { error } = await supabase
+                .from('People')
+                .delete()
+                .eq('id', editingUser.id)
+
+            if (error) {
+                console.error('Delete participant error', error)
+                setFormSubmitError('No se pudo eliminar al participante. Intenta nuevamente.')
+                setIsDeleting(false)
+                return
+            }
+
+            await fetchUsers(getActiveFilters(), { silent: true })
+            setIsDeleteConfirmOpen(false)
+            closeModal()
+        } catch (err) {
+            console.error('Unexpected delete error', err)
+            setFormSubmitError('Ocurrió un error inesperado al eliminar al participante.')
+            setIsDeleting(false)
+        }
+    }
+
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Header */}
@@ -520,6 +553,57 @@ export default function DashboardPage() {
                                         style={{ backgroundColor: '#9bc3db' }}
                                     >
                                         Send
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {isDeleteConfirmOpen && editingUser && (
+                    <div className="fixed inset-0 z-[60]">
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { if (!isDeleting) setIsDeleteConfirmOpen(false) }}></div>
+                        <div className="absolute inset-0 flex items-center justify-center p-4">
+                            <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border-2 border-red-100 overflow-hidden">
+                                <div className="px-6 py-5 border-b border-red-100 flex items-center justify-between" style={{ backgroundColor: '#fef2f2' }}>
+                                    <h3 className="text-lg font-bold text-red-700">Eliminar participante</h3>
+                                    <button onClick={() => { if (!isDeleting) setIsDeleteConfirmOpen(false) }} className="text-red-500 hover:text-red-700">
+                                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                    </button>
+                                </div>
+                                <div className="px-6 py-5 space-y-4">
+                                    <p className="text-sm text-gray-700">¿Estás seguro de que deseas eliminar a:</p>
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-10 w-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#fee2e2' }}>
+                                            <span className="text-red-600 font-bold">{editingUser.names.charAt(0)}</span>
+                                        </div>
+                                        <div className="text-sm">
+                                            <div className="font-bold text-gray-900">{editingUser.names} {editingUser.last_name_1} {editingUser.last_name_2}</div>
+                                            <div className="text-gray-600">C.C. {editingUser.national_id}</div>
+                                        </div>
+                                    </div>
+                                    <div className="rounded-2xl bg-red-50 border border-red-100 p-4 text-sm text-red-700">
+                                        Esta acción no se puede deshacer. Se eliminarán todos los datos asociados a este participante.
+                                    </div>
+                                </div>
+                                <div className="px-6 py-4 border-t border-red-100 bg-white flex items-center justify-end gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => { if (!isDeleting) setIsDeleteConfirmOpen(false) }}
+                                        className="px-5 py-2 rounded-xl text-sm font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
+                                        disabled={isDeleting}
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => { void handleDeleteParticipant() }}
+                                        className="px-5 py-2 rounded-xl text-sm font-bold text-white shadow-lg transition disabled:opacity-60 disabled:cursor-not-allowed"
+                                        style={{ backgroundColor: '#ef4444' }}
+                                        onMouseEnter={(e) => !isDeleting && (e.currentTarget.style.backgroundColor = '#dc2626')}
+                                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#ef4444')}
+                                        disabled={isDeleting}
+                                    >
+                                        {isDeleting ? 'Eliminando...' : 'Eliminar'}
                                     </button>
                                 </div>
                             </div>
@@ -1352,6 +1436,19 @@ export default function DashboardPage() {
                                 </div>
 
                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-4 pt-6 border-t-2 border-gray-100 sticky bottom-0 bg-white z-10">
+                                    {isEditing && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsDeleteConfirmOpen(true)}
+                                            disabled={isSubmitting || isDeleting}
+                                            className="w-full sm:w-auto px-8 py-4 rounded-2xl text-sm font-bold text-white shadow-xl transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed transform hover:scale-105 hover:shadow-2xl"
+                                            style={{ backgroundColor: '#ef4444' }}
+                                            onMouseEnter={(e) => !isSubmitting && !isDeleting && (e.currentTarget.style.backgroundColor = '#dc2626')}
+                                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#ef4444')}
+                                        >
+                                            {isDeleting ? 'Eliminando...' : 'Eliminar participante'}
+                                        </button>
+                                    )}
                                     <button
                                         type="button"
                                         onClick={closeModal}
@@ -1361,10 +1458,10 @@ export default function DashboardPage() {
                                     </button>
                                     <button
                                         type="submit"
-                                        disabled={isSubmitting}
+                                        disabled={isSubmitting || isDeleting}
                                         className="w-full sm:w-auto px-8 py-4 rounded-2xl text-sm font-bold text-white shadow-xl transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed transform hover:scale-105 hover:shadow-2xl flex items-center justify-center space-x-2"
                                         style={{ backgroundColor: '#9bc3db' }}
-                                        onMouseEnter={(e) => !isSubmitting && (e.currentTarget.style.backgroundColor = '#8bb3d1')}
+                                        onMouseEnter={(e) => !isSubmitting && !isDeleting && (e.currentTarget.style.backgroundColor = '#8bb3d1')}
                                         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#9bc3db')}
                                     >
                                         {isSubmitting ? (
