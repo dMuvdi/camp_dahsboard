@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { useState, useEffect, ChangeEvent, FormEvent, useCallback, useMemo } from 'react'
+import { useState, useEffect, ChangeEvent, FormEvent, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, getAllPeople, User } from '@/lib/supabase'
 
@@ -15,7 +15,8 @@ export default function DashboardPage() {
         p_name: '',
         p_national_id: '',
         p_checked_in: '' as '' | 'true' | 'false',
-        p_age_group: '' as '' | 'adults' | 'minors'
+        p_age_group: '' as '' | 'adults' | 'minors',
+        p_has_signed: '' as '' | 'true' | 'false'
     })
     const [isModalOpen, setIsModalOpen] = useState(false)
     const initialFormState = {
@@ -42,8 +43,12 @@ export default function DashboardPage() {
     const [isEditing, setIsEditing] = useState(false)
     const [editingUser, setEditingUser] = useState<User | null>(null)
     const [isDeleting, setIsDeleting] = useState(false)
-    const [managerNames, setManagerNames] = useState<Record<string, string>>({})
     const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
+    const [copyStatus, setCopyStatus] = useState<string | null>(null)
+    const [isCopyToastVisible, setIsCopyToastVisible] = useState(false)
+    const copyHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const copyRemoveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const [managerNames, setManagerNames] = useState<Record<string, string>>({})
     const router = useRouter()
 
     const checkAuth = useCallback(async () => {
@@ -65,24 +70,34 @@ export default function DashboardPage() {
                 setLoading(true)
             }
             // Separate non-RPC filters (like age group) from RPC filters
-            const { p_age_group, ...rpcFilters } = filterParams as Record<string, string>
+            const { p_age_group: pAgeGroup, p_has_signed: pHasSigned, p_checked_in: pCheckedIn, ...rpcFilters } = filterParams as Record<string, string>
             const data = await getAllPeople(rpcFilters)
             const filteredByAge = Array.isArray(data) ? data.filter((u: User) => {
-                if (!p_age_group) return true
-                if (p_age_group === 'minors') return Number(u.age) < 18
-                if (p_age_group === 'adults') return Number(u.age) >= 18
+                if (!pAgeGroup) return true
+                if (pAgeGroup === 'minors') return Number(u.age) < 18
+                if (pAgeGroup === 'adults') return Number(u.age) >= 18
                 return true
             }) : []
 
-            const sortedUsers = Array.isArray(filteredByAge)
-                ? [...filteredByAge].sort(
+            const filteredBySigned = Array.isArray(filteredByAge) ? filteredByAge.filter((u: User) => {
+                if (!pHasSigned) return true
+                return pHasSigned === 'true' ? !!u.has_signed : !u.has_signed
+            }) : []
+
+            const filteredByCheckIn = Array.isArray(filteredBySigned) ? filteredBySigned.filter((u: User) => {
+                if (!pCheckedIn) return true
+                return pCheckedIn === 'true' ? !!u.checked_in : !u.checked_in
+            }) : []
+
+            const sortedUsers = Array.isArray(filteredByCheckIn)
+                ? [...filteredByCheckIn].sort(
                     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
                 )
                 : []
             setUsers(sortedUsers)
 
-            const managerIds = Array.isArray(filteredByAge)
-                ? [...new Set(filteredByAge
+            const managerIds = Array.isArray(filteredByCheckIn)
+                ? [...new Set(filteredByCheckIn
                     .map((u: User) => u.manager_id)
                     .filter((id): id is string => typeof id === 'string' && id.length > 0))]
                 : []
@@ -114,6 +129,17 @@ export default function DashboardPage() {
                 setIsRefreshing(false)
             } else {
                 setLoading(false)
+            }
+        }
+    }, [])
+
+    useEffect(() => {
+        return () => {
+            if (copyHideTimerRef.current) {
+                clearTimeout(copyHideTimerRef.current)
+            }
+            if (copyRemoveTimerRef.current) {
+                clearTimeout(copyRemoveTimerRef.current)
             }
         }
     }, [])
@@ -187,6 +213,59 @@ export default function DashboardPage() {
         } catch (e) {
             console.error('Email error', e)
             setEmailStatus({ type: 'error', message: 'Oops! Something went wrong. Please try again.' })
+            setTimeout(() => setEmailStatus(null), 5000)
+        }
+    }
+
+    const handleCopySignatureLink = async (user: User) => {
+        const link = `https://camp-dahsboard.vercel.app/contract_sign/${user.id}`
+        try {
+            if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(link)
+            } else {
+                const textarea = document.createElement('textarea')
+                textarea.value = link
+                textarea.style.position = 'fixed'
+                textarea.style.opacity = '0'
+                document.body.appendChild(textarea)
+                textarea.focus()
+                textarea.select()
+                document.execCommand('copy')
+                document.body.removeChild(textarea)
+            }
+
+            if (copyHideTimerRef.current) {
+                clearTimeout(copyHideTimerRef.current)
+            }
+            if (copyRemoveTimerRef.current) {
+                clearTimeout(copyRemoveTimerRef.current)
+            }
+
+            setCopyStatus('Signature link copied to clipboard.')
+            setIsCopyToastVisible(true)
+
+            copyHideTimerRef.current = setTimeout(() => {
+                setIsCopyToastVisible(false)
+                copyHideTimerRef.current = null
+            }, 2800)
+
+            copyRemoveTimerRef.current = setTimeout(() => {
+                setCopyStatus(null)
+                copyRemoveTimerRef.current = null
+            }, 3200)
+        } catch (error) {
+            console.error('Copy signature link error', error)
+            if (copyHideTimerRef.current) {
+                clearTimeout(copyHideTimerRef.current)
+                copyHideTimerRef.current = null
+            }
+            if (copyRemoveTimerRef.current) {
+                clearTimeout(copyRemoveTimerRef.current)
+                copyRemoveTimerRef.current = null
+            }
+            setIsCopyToastVisible(false)
+            setCopyStatus(null)
+            setEmailStatus({ type: 'error', message: 'No se pudo copiar el enlace. Intenta nuevamente.' })
             setTimeout(() => setEmailStatus(null), 5000)
         }
     }
@@ -565,7 +644,7 @@ export default function DashboardPage() {
                         <div className="absolute inset-0 flex items-center justify-center p-4">
                             <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border-2 border-red-100 overflow-hidden">
                                 <div className="px-6 py-5 border-b border-red-100 flex items-center justify-between" style={{ backgroundColor: '#fef2f2' }}>
-                                    <h3 className="text-lg font-bold text-red-700">Eliminar participante</h3>
+                                    <h3 className="text-lg font-bold text-red-700">Delete Participant</h3>
                                     <button onClick={() => { if (!isDeleting) setIsDeleteConfirmOpen(false) }} className="text-red-500 hover:text-red-700">
                                         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                     </button>
@@ -671,7 +750,7 @@ export default function DashboardPage() {
                         <div className="ml-auto">
                             <button
                                 onClick={() => {
-                                    const reset = { p_email: '', p_gender: '', p_name: '', p_national_id: '', p_checked_in: '' as '' | 'true' | 'false', p_age_group: '' as '' | 'adults' | 'minors' }
+                                    const reset = { p_email: '', p_gender: '', p_name: '', p_national_id: '', p_checked_in: '' as '' | 'true' | 'false', p_age_group: '' as '' | 'adults' | 'minors', p_has_signed: '' as '' | 'true' | 'false' }
                                     setFilters(reset)
                                     fetchUsers({}, { silent: true })
                                 }}
@@ -826,6 +905,27 @@ export default function DashboardPage() {
                                 </div>
                             </div>
                         </div>
+                        <div className="space-y-2">
+                            <label className="block text-sm font-bold text-gray-800 mb-3">
+                                Has Signed
+                            </label>
+                            <div className="relative">
+                                <select
+                                    className="w-full px-5 py-4 pr-12 border-2 border-gray-200 rounded-2xl bg-white shadow-md text-gray-900 appearance-none transition-all duration-300 focus:border-2 focus:shadow-lg focus:ring-0 focus:outline-none transform focus:scale-[1.02]"
+                                    value={filters.p_has_signed}
+                                    onChange={(e) => handleFilterChange('p_has_signed', e.target.value)}
+                                >
+                                    <option value="">All</option>
+                                    <option value="true">Signed</option>
+                                    <option value="false">Not Signed</option>
+                                </select>
+                                <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
+                                    <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -949,6 +1049,9 @@ export default function DashboardPage() {
                                             Manager
                                         </th>
                                         <th className="px-8 py-6 text-left text-xs font-bold text-white uppercase tracking-wider">
+                                            Signature Link
+                                        </th>
+                                        <th className="px-8 py-6 text-left text-xs font-bold text-white uppercase tracking-wider">
                                             Created
                                         </th>
                                         <th className="px-8 py-6 text-left text-xs font-bold text-white uppercase tracking-wider">
@@ -1058,6 +1161,20 @@ export default function DashboardPage() {
                                                 {user.manager_id
                                                     ? (managerNames[user.manager_id] || 'Cargando...')
                                                     : '—'}
+                                            </td>
+                                            <td className="px-8 py-6 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                    onClick={(event) => {
+                                                        event.stopPropagation()
+                                                        void handleCopySignatureLink(user)
+                                                    }}
+                                                    className="text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                                                    style={{ backgroundColor: '#6366f1' }}
+                                                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#4f46e5')}
+                                                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#6366f1')}
+                                                >
+                                                    Copy Link
+                                                </button>
                                             </td>
                                             <td className="px-8 py-6 whitespace-nowrap text-sm font-medium text-gray-600">
                                                 {new Date(user.created_at).toLocaleDateString()}
@@ -1446,7 +1563,7 @@ export default function DashboardPage() {
                                             onMouseEnter={(e) => !isSubmitting && !isDeleting && (e.currentTarget.style.backgroundColor = '#dc2626')}
                                             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#ef4444')}
                                         >
-                                            {isDeleting ? 'Eliminando...' : 'Eliminar participante'}
+                                            {isDeleting ? 'Deleting...' : 'Delete Participant'}
                                         </button>
                                     )}
                                     <button
@@ -1482,6 +1599,19 @@ export default function DashboardPage() {
                             </form>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {copyStatus && (
+                <div
+                    className={`fixed ${emailStatus ? 'bottom-24' : 'bottom-6'} right-6 z-[70] px-5 py-3 rounded-2xl shadow-xl border border-green-200 bg-white flex items-center gap-3 transition-all duration-300 ease-in-out ${isCopyToastVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-2 scale-95 pointer-events-none'}`}
+                >
+                    <div className="flex-shrink-0 w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                        <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                    </div>
+                    <span className="text-sm font-semibold text-green-800">{copyStatus}</span>
                 </div>
             )}
         </div>
