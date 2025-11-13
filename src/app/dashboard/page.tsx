@@ -5,10 +5,29 @@ import { useState, useEffect, ChangeEvent, FormEvent, useCallback, useMemo, useR
 import { useRouter } from 'next/navigation'
 import { supabase, getAllPeople, User } from '@/lib/supabase'
 
+interface DashboardStats {
+    total: number
+    signed: number
+    notSigned: number
+    checkedIn: number
+    notCheckedIn: number
+    checkedOut: number
+    notCheckedOut: number
+}
+
 export default function DashboardPage() {
     const [users, setUsers] = useState<User[]>([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
+    const [stats, setStats] = useState<DashboardStats>({
+        total: 0,
+        signed: 0,
+        notSigned: 0,
+        checkedIn: 0,
+        notCheckedIn: 0,
+        checkedOut: 0,
+        notCheckedOut: 0
+    })
     const [filters, setFilters] = useState({
         p_email: '',
         p_gender: '',
@@ -57,6 +76,42 @@ export default function DashboardPage() {
             router.push('/login')
         }
     }, [router])
+
+    const fetchStats = useCallback(async () => {
+        try {
+            // Fetch all people to calculate stats
+            const { data, error } = await supabase
+                .from('People')
+                .select('has_signed, checked_in, checked_out')
+
+            if (error) {
+                console.error('Error fetching stats:', error)
+                return
+            }
+
+            if (data) {
+                const total = data.length
+                const signed = data.filter(p => p.has_signed).length
+                const notSigned = total - signed
+                const checkedIn = data.filter(p => p.checked_in).length
+                const notCheckedIn = total - checkedIn
+                const checkedOut = data.filter(p => p.checked_out).length
+                const notCheckedOut = total - checkedOut
+
+                setStats({
+                    total,
+                    signed,
+                    notSigned,
+                    checkedIn,
+                    notCheckedIn,
+                    checkedOut,
+                    notCheckedOut
+                })
+            }
+        } catch (err) {
+            console.error('Error fetching stats:', err)
+        }
+    }, [])
 
     const fetchUsers = useCallback(async (
         filterParams: Record<string, string> = {},
@@ -121,6 +176,9 @@ export default function DashboardPage() {
             } else {
                 setManagerNames({})
             }
+
+            // Fetch stats after fetching users
+            await fetchStats()
         } catch (err) {
             setError('Failed to fetch users')
             console.error(err)
@@ -131,7 +189,7 @@ export default function DashboardPage() {
                 setLoading(false)
             }
         }
-    }, [])
+    }, [fetchStats])
 
     useEffect(() => {
         return () => {
@@ -734,6 +792,114 @@ export default function DashboardPage() {
                                 </svg>
                                 <span>Scan QR</span>
                             </a>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Statistics Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-6 mb-8">
+                    {/* Total Card */}
+                    <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-3xl shadow-2xl p-6 text-white transform transition-all duration-300 hover:scale-105 hover:shadow-3xl border-2 border-purple-400">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                                <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-3xl font-bold">{stats.total}</p>
+                            <p className="text-sm font-semibold text-purple-100">Total People</p>
+                        </div>
+                    </div>
+
+                    {/* Signed Card */}
+                    <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-3xl shadow-2xl p-6 text-white transform transition-all duration-300 hover:scale-105 hover:shadow-3xl border-2 border-green-400">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                                <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-3xl font-bold">{stats.signed}</p>
+                            <p className="text-sm font-semibold text-green-100">Signed</p>
+                        </div>
+                    </div>
+
+                    {/* Not Signed Card */}
+                    <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-3xl shadow-2xl p-6 text-white transform transition-all duration-300 hover:scale-105 hover:shadow-3xl border-2 border-red-400">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                                <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-3xl font-bold">{stats.notSigned}</p>
+                            <p className="text-sm font-semibold text-red-100">Not Signed</p>
+                        </div>
+                    </div>
+
+                    {/* Checked In Card */}
+                    <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-3xl shadow-2xl p-6 text-white transform transition-all duration-300 hover:scale-105 hover:shadow-3xl border-2 border-blue-400">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                                <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-3xl font-bold">{stats.checkedIn}</p>
+                            <p className="text-sm font-semibold text-blue-100">Checked In</p>
+                        </div>
+                    </div>
+
+                    {/* Not Checked In Card */}
+                    <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-3xl shadow-2xl p-6 text-white transform transition-all duration-300 hover:scale-105 hover:shadow-3xl border-2 border-orange-400">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                                <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-3xl font-bold">{stats.notCheckedIn}</p>
+                            <p className="text-sm font-semibold text-orange-100">Not Checked In</p>
+                        </div>
+                    </div>
+
+                    {/* Checked Out Card */}
+                    <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-3xl shadow-2xl p-6 text-white transform transition-all duration-300 hover:scale-105 hover:shadow-3xl border-2 border-teal-400">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                                <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-3xl font-bold">{stats.checkedOut}</p>
+                            <p className="text-sm font-semibold text-teal-100">Checked Out</p>
+                        </div>
+                    </div>
+
+                    {/* Not Checked Out Card */}
+                    <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-3xl shadow-2xl p-6 text-white transform transition-all duration-300 hover:scale-105 hover:shadow-3xl border-2 border-indigo-400">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                                <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-3xl font-bold">{stats.notCheckedOut}</p>
+                            <p className="text-sm font-semibold text-indigo-100">Not Checked Out</p>
                         </div>
                     </div>
                 </div>
