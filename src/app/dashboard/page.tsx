@@ -59,6 +59,8 @@ export default function DashboardPage() {
     const [emailStatus, setEmailStatus] = useState<{ type: 'success' | 'error' | 'loading', message: string } | null>(null)
     const [isConfirmOpen, setIsConfirmOpen] = useState(false)
     const [confirmUser, setConfirmUser] = useState<User | null>(null)
+    const [isQRConfirmOpen, setIsQRConfirmOpen] = useState(false)
+    const [confirmQRUser, setConfirmQRUser] = useState<User | null>(null)
     const [isEditing, setIsEditing] = useState(false)
     const [editingUser, setEditingUser] = useState<User | null>(null)
     const [isDeleting, setIsDeleting] = useState(false)
@@ -275,6 +277,39 @@ export default function DashboardPage() {
         }
     }
 
+    const sendQRCodeEmail = async (user: User) => {
+        try {
+            // Show loading state
+            setEmailStatus({ type: 'loading', message: 'Sending QR Code Email...' })
+
+            const res = await fetch('/api/send-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    to: user.email,
+                    subject: 'Tu Ticket de Embarque - Relevante Camp',
+                    text: `Hola ${user.names}! Aquí está tu ticket de embarque con el código QR para el check-in del camp.`,
+                    userId: user.id,
+                    fullName: `${user.names} ${user.last_name_1} ${user.last_name_2}`.trim(),
+                    emailType: 'ticket'
+                })
+            })
+            if (!res.ok) {
+                console.error('QR Code email failed')
+                setEmailStatus({ type: 'error', message: 'No se pudo enviar el código QR. Intenta nuevamente.' })
+                setTimeout(() => setEmailStatus(null), 5000)
+            }
+            else {
+                setEmailStatus({ type: 'success', message: `🎉 Código QR enviado a ${user.names}!` })
+                setTimeout(() => setEmailStatus(null), 5000)
+            }
+        } catch (e) {
+            console.error('QR Code email error', e)
+            setEmailStatus({ type: 'error', message: 'Ocurrió un error. Intenta nuevamente.' })
+            setTimeout(() => setEmailStatus(null), 5000)
+        }
+    }
+
     const handleCopySignatureLink = async (user: User) => {
         const link = `https://camp-dahsboard.vercel.app/contract_sign/${user.id}`
         try {
@@ -331,6 +366,11 @@ export default function DashboardPage() {
     const handleEmailUser = (user: User) => {
         setConfirmUser(user)
         setIsConfirmOpen(true)
+    }
+
+    const handleQREmailUser = (user: User) => {
+        setConfirmQRUser(user)
+        setIsQRConfirmOpen(true)
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -688,6 +728,52 @@ export default function DashboardPage() {
                                         }}
                                         className="px-5 py-2 rounded-xl text-sm font-bold text-white shadow-lg transition"
                                         style={{ backgroundColor: '#9bc3db' }}
+                                    >
+                                        Send
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {isQRConfirmOpen && confirmQRUser && (
+                    <div className="fixed inset-0 z-50">
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsQRConfirmOpen(false)}></div>
+                        <div className="absolute inset-0 flex items-center justify-center p-4">
+                            <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border-2 border-indigo-100 overflow-hidden">
+                                <div className="px-6 py-5 border-b border-indigo-100 flex items-center justify-between" style={{ backgroundColor: '#f0f4ff' }}>
+                                    <h3 className="text-lg font-bold text-indigo-900">Send QR Code Email</h3>
+                                    <button onClick={() => setIsQRConfirmOpen(false)} className="text-indigo-500 hover:text-indigo-700">
+                                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                    </button>
+                                </div>
+                                <div className="px-6 py-5 space-y-3">
+                                    <p className="text-sm text-gray-700">Are you sure you want to send the QR code boarding pass to:</p>
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-10 w-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#6366f1' }}>
+                                            <span className="text-white font-bold">{confirmQRUser.names.charAt(0)}</span>
+                                        </div>
+                                        <div className="text-sm">
+                                            <div className="font-bold text-gray-900">{confirmQRUser.names} {confirmQRUser.last_name_1} {confirmQRUser.last_name_2}</div>
+                                            <div className="text-gray-600">{confirmQRUser.email}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="px-6 py-4 border-t border-indigo-100 bg-white flex items-center justify-end gap-3">
+                                    <button onClick={() => setIsQRConfirmOpen(false)} className="px-5 py-2 rounded-xl text-sm font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition">Cancel</button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const userCopy = confirmQRUser as User
+                                            setIsQRConfirmOpen(false)
+                                            setConfirmQRUser(null)
+                                            // Defer sending to next tick to ensure modal unmounts first
+                                            setTimeout(() => { void sendQRCodeEmail(userCopy) }, 0)
+                                        }}
+                                        className="px-5 py-2 rounded-xl text-sm font-bold text-white shadow-lg transition"
+                                        style={{ backgroundColor: '#6366f1' }}
+                                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#4f46e5')}
+                                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#6366f1')}
                                     >
                                         Send
                                     </button>
@@ -1194,7 +1280,7 @@ export default function DashboardPage() {
                                             Name
                                         </th>
                                         <th className="px-8 py-6 text-left text-xs font-bold text-white uppercase tracking-wider">
-                                            Email
+                                            Contract Email
                                         </th>
                                         <th className="px-8 py-6 text-left text-xs font-bold text-white uppercase tracking-wider">
                                             Phone
@@ -1221,7 +1307,10 @@ export default function DashboardPage() {
                                             Created
                                         </th>
                                         <th className="px-8 py-6 text-left text-xs font-bold text-white uppercase tracking-wider">
-                                            Action
+                                            Send Contract Email
+                                        </th>
+                                        <th className="px-8 py-6 text-left text-xs font-bold text-white uppercase tracking-wider">
+                                            Send QR Code
                                         </th>
                                         <th className="px-8 py-6 text-left text-xs font-bold text-white uppercase tracking-wider">
                                             Document
@@ -1356,7 +1445,26 @@ export default function DashboardPage() {
                                                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                                     </svg>
-                                                    <span>Email</span>
+                                                    <span>Contract Email</span>
+                                                </button>
+                                            </td>
+                                            <td className="px-8 py-6 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                    onClick={() => handleQREmailUser(user)}
+                                                    disabled={!user.has_signed}
+                                                    className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 shadow-lg flex items-center space-x-2 ${user.has_signed
+                                                        ? 'text-white hover:shadow-xl transform hover:-translate-y-0.5'
+                                                        : 'text-gray-400 bg-gray-100 cursor-not-allowed opacity-60'
+                                                        }`}
+                                                    style={user.has_signed ? { backgroundColor: '#6366f1' } : {}}
+                                                    onMouseEnter={(e) => user.has_signed && (e.currentTarget.style.backgroundColor = '#4f46e5')}
+                                                    onMouseLeave={(e) => user.has_signed && (e.currentTarget.style.backgroundColor = '#6366f1')}
+                                                    title={user.has_signed ? 'Send QR code ticket' : 'User must sign consent form first'}
+                                                >
+                                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                                                    </svg>
+                                                    <span>Send QR Code</span>
                                                 </button>
                                             </td>
                                             <td className="px-8 py-6 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
