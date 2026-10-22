@@ -1,23 +1,34 @@
-import type { Metadata } from "next";
-import { Inter, Nunito_Sans } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Cinzel, Great_Vibes, Montserrat } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+// Revelation Camp brand type (Canva brand guide): Cinzel display, Great Vibes script, Montserrat text
+const cinzel = Cinzel({
+  variable: "--font-cinzel",
   subsets: ["latin"],
   display: "swap",
 });
 
-const nunitoSans = Nunito_Sans({
-  variable: "--font-nunito-sans",
+const greatVibes = Great_Vibes({
+  variable: "--font-great-vibes",
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800", "900"],
+  weight: "400",
+  display: "swap",
+});
+
+const montserrat = Montserrat({
+  variable: "--font-montserrat",
+  subsets: ["latin"],
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Camp Platform - Admin Dashboard",
-  description: "Admin dashboard for managing camp users and registrations",
+  title: { default: "Revelation Camp", template: "%s | Revelation Camp" },
+  description: "Campamento del Ministerio Juvenil VIDA.",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#4f0100",
 };
 
 export default function RootLayout({
@@ -26,10 +37,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="es">
       <body
-        className={`${inter.variable} ${nunitoSans.variable} antialiased`}
-        style={{ fontFamily: "var(--font-nunito-sans), sans-serif" }}
+        className={`${cinzel.variable} ${greatVibes.variable} ${montserrat.variable} font-sans antialiased`}
       >
         {children}
       </body>

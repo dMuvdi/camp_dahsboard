@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import { supabase } from '@/lib/supabase'
+import Link from 'next/link'
+import Wordmark from '@/components/Wordmark'
+import StaffNav from '@/components/StaffNav'
 
 export default function ScanQrPage() {
     const router = useRouter()
@@ -184,15 +187,26 @@ export default function ScanQrPage() {
                     }
                 `
             }} />
-            <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-                <h1 className="text-2xl font-bold mb-4">Scan QR - Check-in</h1>
+            <header className="bg-oxblood">
+                <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+                    <Wordmark className="text-vermilion text-xl" />
+                    <Link href="/dashboard" className="hidden items-center gap-1.5 rounded-lg border border-parchment/40 px-4 py-2 text-sm font-semibold text-parchment hover:bg-parchment/10 md:inline-flex">
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Participants
+                    </Link>
+                </div>
+            </header>
+            <div className="flex min-h-[calc(100svh-4rem)] flex-col items-center justify-center p-4 pb-24 md:pb-4">
+                <h1 className="font-display text-2xl text-oxblood mb-4">Scan to check in</h1>
                 {!secureContext && (
-                    <p className="mb-3 text-sm text-red-600">Camera requires HTTPS. Please use a secure URL or localhost.</p>
+                    <p className="mb-3 text-sm text-oxblood">Camera requires HTTPS. Please use a secure URL or localhost.</p>
                 )}
                 {!supported && (
-                    <p className="mb-3 text-sm text-red-600">Camera API not supported on this device/browser.</p>
+                    <p className="mb-3 text-sm text-oxblood">Camera API not supported on this device/browser.</p>
                 )}
-                <div className="w-full max-w-md rounded-xl overflow-hidden shadow-lg border bg-black aspect-[3/4]">
+                <div className="w-full max-w-md rounded-2xl overflow-hidden border-4 border-oxblood bg-black aspect-[3/4]">
                     <video
                         ref={videoRef}
                         className="w-full h-full object-cover"
@@ -206,9 +220,9 @@ export default function ScanQrPage() {
                     ></video>
                 </div>
                 {/* auto-start camera; no manual button */}
-                {status && <p className="mt-4 text-sm text-gray-700">{status}</p>}
+                {status && <p className="mt-4 text-sm text-ink/80">{status}</p>}
                 {error && (
-                    <p className="mt-2 text-sm text-red-600">{error}</p>
+                    <p className="mt-2 text-sm text-oxblood">{error}</p>
                 )}
 
                 {/* Already Checked In Dialog */}
@@ -216,17 +230,17 @@ export default function ScanQrPage() {
                     <div className="fixed inset-0 z-50">
                         <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={handleCloseDialog}></div>
                         <div className="absolute inset-0 flex items-center justify-center p-4">
-                            <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border-2 border-orange-100 overflow-hidden animate-[slideIn_0.3s_ease-out]">
-                                <div className="px-6 py-5 border-b border-orange-100 flex items-center justify-between" style={{ backgroundColor: '#fff7ed' }}>
+                            <div className="w-full max-w-md bg-white rounded-2xl border border-ink/10 overflow-hidden animate-[slideIn_0.3s_ease-out]">
+                                <div className="px-6 py-5 border-b border-ink/10 bg-parchment/60 flex items-center justify-between">
                                     <div className="flex items-center space-x-3">
-                                        <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#fb923c' }}>
+                                        <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-vermilion">
                                             <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                             </svg>
                                         </div>
-                                        <h3 className="text-lg font-bold text-orange-900">Already Checked In</h3>
+                                        <h3 className="text-lg font-bold text-oxblood">Already Checked In</h3>
                                     </div>
-                                    <button onClick={handleCloseDialog} className="text-orange-500 hover:text-orange-700 transition-colors duration-200">
+                                    <button onClick={handleCloseDialog} className="text-ink/50 hover:text-ink transition-colors duration-200">
                                         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                         </svg>
@@ -234,32 +248,29 @@ export default function ScanQrPage() {
                                 </div>
                                 <div className="px-6 py-6 space-y-4">
                                     <div className="flex items-center gap-3">
-                                        <div className="h-14 w-14 rounded-2xl flex items-center justify-center shadow-lg" style={{ backgroundColor: '#9bc3db' }}>
+                                        <div className="h-14 w-14 rounded-2xl flex items-center justify-center bg-oxblood">
                                             <span className="text-white font-bold text-xl">
                                                 {checkedInPersonName.charAt(0)}
                                             </span>
                                         </div>
                                         <div>
-                                            <div className="font-bold text-gray-900 text-lg">{checkedInPersonName}</div>
-                                            <div className="text-sm text-gray-600">is already checked in</div>
+                                            <div className="font-bold text-ink text-lg">{checkedInPersonName}</div>
+                                            <div className="text-sm text-ink/70">is already checked in</div>
                                         </div>
                                     </div>
-                                    <div className="rounded-2xl border-2 border-orange-200 p-4 text-sm text-orange-800" style={{ backgroundColor: '#fff7ed' }}>
+                                    <div className="rounded-xl border border-vermilion/30 bg-vermilion/5 p-4 text-sm text-oxblood">
                                         <div className="flex items-start space-x-2">
-                                            <svg className="h-5 w-5 text-orange-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <svg className="h-5 w-5 text-vermilion flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                             </svg>
                                             <p className="font-semibold">This participant has already been checked in. No action needed.</p>
                                         </div>
                                     </div>
                                 </div>
-                                <div className="px-6 py-4 border-t border-orange-100 bg-white flex items-center justify-end gap-3">
+                                <div className="px-6 py-4 border-t border-ink/10 bg-white flex items-center justify-end gap-3">
                                     <button
                                         onClick={handleCloseDialog}
-                                        className="px-6 py-3 rounded-2xl text-sm font-bold text-white shadow-lg transition-all duration-300 transform hover:scale-105 hover:shadow-xl"
-                                        style={{ backgroundColor: '#9bc3db' }}
-                                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#8bb3d1')}
-                                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#9bc3db')}
+                                        className="px-6 py-3 rounded-lg text-sm font-semibold text-parchment bg-oxblood hover:bg-oxblood/90 transition-colors"
                                     >
                                         Return to Dashboard
                                     </button>
@@ -269,6 +280,7 @@ export default function ScanQrPage() {
                     </div>
                 )}
             </div>
+            <StaffNav />
         </>
     )
 }
