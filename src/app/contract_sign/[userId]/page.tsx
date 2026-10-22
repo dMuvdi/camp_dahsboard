@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { supabase, type User } from "@/lib/supabase";
+import type { User } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import ContractSignClient from "@/app/contract_sign/[userId]/ContractSignClient";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,8 @@ async function fetchParticipant(userId: string): Promise<User | null> {
         return null;
     }
 
-    const { data, error } = await supabase
+    // Signers aren't logged in, so the page reads its one row on the server
+    const { data, error } = await supabaseAdmin()
         .from("People")
         .select("*")
         .eq("id", userId)

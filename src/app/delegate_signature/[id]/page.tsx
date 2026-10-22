@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { supabase, type User } from "@/lib/supabase";
+import type { User } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import DelegateSignClient from "@/app/delegate_signature/[id]/DelegateSignClient";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,8 @@ async function fetchMinor(minorId: string): Promise<User | null> {
         return null;
     }
 
-    const { data, error } = await supabase
+    // Signers aren't logged in, so the page reads its one row on the server
+    const { data, error } = await supabaseAdmin()
         .from("People")
         .select("*")
         .eq("id", minorId)
@@ -36,6 +38,8 @@ export default async function DelegateSignaturePage({
         notFound();
     }
 
-    return <DelegateSignClient minor={minor} />;
+    const manager = minor.manager_id ? await fetchMinor(minor.manager_id) : null;
+
+    return <DelegateSignClient minor={minor} manager={manager} />;
 }
 

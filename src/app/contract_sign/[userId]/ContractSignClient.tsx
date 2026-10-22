@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase, getAllPeople } from "@/lib/supabase";
 import type { User } from "@/lib/supabase";
+import { camp } from "@/lib/camp";
+import Wordmark from "@/components/Wordmark";
+import { AdultConsent, MinorConsent, consentTitle, fullName } from "@/components/ConsentDocument";
 
 interface ContractSignClientProps {
     participant: User;
@@ -13,6 +15,107 @@ interface SignatureState {
     hasDrawn: boolean;
     strokes: Path2D[];
 }
+
+// What /api/camper-lookup returns for a registered camper
+type Camper = Pick<User, "id" | "names" | "last_name_1" | "last_name_2" | "age">;
+
+type Lookup =
+    | { status: "idle" | "checking" }
+    | { status: "error"; message: string }
+    | { status: "found"; person: Camper };
+
+const inputClass = "block h-12 w-full rounded-xl border border-ink/20 bg-white px-4 text-base text-ink placeholder-ink/40 focus:border-vermilion focus:outline-none focus:ring-2 focus:ring-vermilion/25";
+const labelClass = "mb-1.5 block text-sm font-semibold text-ink";
+
+// Exact C.C. match, checked on the server (signers have no access to the participants table)
+async function findPerson(nationalId: string): Promise<Camper | null> {
+    const response = await fetch("/api/camper-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nationalId }),
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`Lookup failed: ${response.status}`);
+    return response.json();
+}
+
+// Debounced check that a C.C. belongs to an adult registered for the camp.
+function usePersonLookup(nationalId: string, enabled: boolean, notFound: string): Lookup {
+    const [lookup, setLookup] = useState<Lookup>({ status: "idle" });
+    useEffect(() => {
+        const id = nationalId.trim();
+        if (!enabled || !id) {
+            setLookup({ status: "idle" });
+            return;
+        }
+        let cancelled = false;
+        setLookup({ status: "checking" });
+        const handle = window.setTimeout(async () => {
+            let next: Lookup;
+            try {
+                const person = await findPerson(id);
+                next = !person
+                    ? { status: "error", message: notFound }
+                    : person.age < 18
+                        ? { status: "error", message: "Esta cédula es de un menor de edad. El responsable debe ser mayor de edad." }
+                        : { status: "found", person };
+            } catch {
+                next = { status: "error", message: "No pudimos verificar la cédula. Revisa tu conexión e intenta de nuevo." };
+            }
+            if (!cancelled) setLookup(next);
+        }, 600);
+        return () => {
+            cancelled = true;
+            window.clearTimeout(handle);
+        };
+    }, [nationalId, enabled, notFound]);
+    return lookup;
+}
+
+const lookupError = (lookup: Lookup) =>
+    lookup.status === "found" ? null : lookup.status === "error" ? lookup.message : "Estamos verificando la cédula, espera un momento.";
+
+function LookupNote({ lookup, id }: { lookup: Lookup; id: string }) {
+    return (
+        <div id={id} aria-live="polite" className="mt-2 min-h-5 text-sm">
+            {lookup.status === "checking" && <p className="text-ink/60">Verificando…</p>}
+            {lookup.status === "error" && <p className="font-semibold text-oxblood">{lookup.message}</p>}
+            {lookup.status === "found" && (
+                <p className="flex items-center gap-1.5 font-semibold text-glass">
+                    <svg className="h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    {fullName(lookup.person)} está inscrito(a) en el campamento
+                </p>
+            )}
+        </div>
+    );
+}
+
+function Step({ n, title, hint, children }: { n: number; title: string; hint?: string; children: React.ReactNode }) {
+    return (
+        <section aria-labelledby={`step-${n}`} className="border-t border-ink/10 px-5 py-8 sm:px-8">
+            <div className="flex items-start gap-3">
+                <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-oxblood text-sm font-semibold text-parchment" aria-hidden="true">
+                    {n}
+                </span>
+                <div>
+                    <h2 id={`step-${n}`} className="text-lg font-semibold leading-8 text-ink">{title}</h2>
+                    {hint && <p className="mt-0.5 text-sm text-ink/60">{hint}</p>}
+                </div>
+            </div>
+            <div className="mt-5">{children}</div>
+        </section>
+    );
+}
+
+const successIcon = (
+    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-glass">
+        <svg className="h-8 w-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+    </div>
+);
 
 export default function ContractSignClient({
     participant,
@@ -30,17 +133,24 @@ export default function ContractSignClient({
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitStatus, setSubmitStatus] = useState<"idle" | "success" | "success_minor_1" | "success_minor_2" | "error">("idle");
     const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-    const [guardianSelection, setGuardianSelection] = useState<"parent" | "delegate" | null>("parent");
-    const [delegateNationalId, setDelegateNationalId] = useState("");
-    const [delegateFullName, setDelegateFullName] = useState("");
-    const [isSearchingDelegate, setIsSearchingDelegate] = useState(false);
+    const [guardianSelection, setGuardianSelection] = useState<"parent" | "delegate" | null>(null);
     const [guardianName, setGuardianName] = useState("");
     const [guardianNationalId, setGuardianNationalId] = useState("");
-    const [isValidatingGuardian, setIsValidatingGuardian] = useState(false);
-    const [guardianValidationError, setGuardianValidationError] = useState("");
+    const [delegateNationalId, setDelegateNationalId] = useState("");
     const [todayFormatted, setTodayFormatted] = useState("");
-    const [isMounted, setIsMounted] = useState(false);
     const isMinor = Number(participant.age) < 18;
+    const minorFirstName = participant.names?.split(" ")[0] || "el menor";
+
+    const guardianLookup = usePersonLookup(
+        guardianNationalId,
+        isMinor && guardianSelection === "parent",
+        "No encontramos a ningún campista inscrito con esta cédula. Si tú no vas al campamento, elige «Va con otro adulto».",
+    );
+    const delegateLookup = usePersonLookup(
+        delegateNationalId,
+        isMinor && guardianSelection === "delegate",
+        "No encontramos a ningún campista inscrito con esta cédula. El responsable debe estar inscrito en el campamento.",
+    );
 
     const resizeCanvas = useCallback(() => {
         const canvas = canvasRef.current;
@@ -55,7 +165,7 @@ export default function ContractSignClient({
             if (canvas.width > 0 && canvas.height > 0) {
                 imageData = context.getImageData(0, 0, canvas.width, canvas.height);
             }
-        } catch (err) {
+        } catch {
             imageData = null;
         }
 
@@ -70,9 +180,8 @@ export default function ContractSignClient({
         }
     }, []);
 
-    // Set mounted state and today's date on client side to avoid hydration mismatch
+    // Today's date only on the client to avoid a hydration mismatch
     useEffect(() => {
-        setIsMounted(true);
         setTodayFormatted(new Date().toLocaleDateString("es-ES", {
             day: "numeric",
             month: "long",
@@ -80,127 +189,29 @@ export default function ContractSignClient({
         }));
     }, []);
 
-    const searchDelegateByNationalId = useCallback(async (searchValue: string) => {
-        if (!isMinor) return;
-        if (guardianSelection !== "delegate") return;
-        const value = searchValue.trim();
-        if (!value) {
-            setDelegateFullName("");
-            return;
-        }
-        setIsSearchingDelegate(true);
-        try {
-            const results = await getAllPeople({ p_national_id: value });
-            if (Array.isArray(results) && results.length > 0) {
-                const person = results[0];
-                // Check for exact match - national_id must exactly match what was typed
-                if (person.national_id === value) {
-                    const full = `${person.names} ${person.last_name_1} ${person.last_name_2}`.trim();
-                    setDelegateFullName(full);
-                } else {
-                    // Not an exact match, clear the name
-                    setDelegateFullName("");
-                }
-            } else {
-                setDelegateFullName("");
-            }
-        } catch {
-            setDelegateFullName("");
-        } finally {
-            setIsSearchingDelegate(false);
-        }
-    }, [isMinor, guardianSelection]);
-
-    const validateGuardianNationalId = async () => {
-        if (!isMinor) return;
-        if (guardianSelection !== "parent") return;
-        const value = guardianNationalId.trim();
-        if (!value) {
-            setGuardianValidationError("");
-            return;
-        }
-        setIsValidatingGuardian(true);
-        setGuardianValidationError("");
-        try {
-            const results = await getAllPeople({ p_national_id: value });
-            if (Array.isArray(results) && results.length === 0) {
-                setGuardianValidationError("Para firmar el contrato debes ser un participante del campamento y estar registrado para el campamento.");
-            } else if (results[0].national_id !== guardianNationalId) {
-                setGuardianValidationError("La C.C. ingresada no coincide con la de ningún participante del campamento.");
-            } else if (results[0].has_signed) {
-                setGuardianValidationError("El participante ya ha firmado el contrato.");
-            } else if (results[0].age < 18) {
-                setGuardianValidationError("El participante es menor de edad y no puede firmar el contrato.");
-            } else {
-                // Clear any previous error if validation passes
-                setGuardianValidationError("");
-            }
-        } catch {
-            setGuardianValidationError("Error al validar la información. Intenta nuevamente.");
-        } finally {
-            setIsValidatingGuardian(false);
-        }
-    };
-
-    // Debounced search for delegate - only search after user stops typing
-    useEffect(() => {
-        if (!isMinor) return;
-        if (guardianSelection !== "delegate") return;
-        const value = delegateNationalId.trim();
-        // If empty, ensure name is blank and don't schedule search
-        if (!value) {
-            setDelegateFullName("");
-            return;
-        }
-        // Wait for user to stop typing before searching (800ms delay)
-        const handle = window.setTimeout(() => {
-            searchDelegateByNationalId(value);
-        }, 800);
-        return () => window.clearTimeout(handle);
-    }, [isMinor, guardianSelection, delegateNationalId, searchDelegateByNationalId]);
-
-    // Debounced validation for guardian national ID
-    useEffect(() => {
-        if (!isMinor) return;
-        if (guardianSelection !== "parent") return;
-        const value = guardianNationalId.trim();
-        if (!value) {
-            setGuardianValidationError("");
-            return;
-        }
-        const handle = window.setTimeout(() => {
-            validateGuardianNationalId();
-        }, 800);
-        return () => window.clearTimeout(handle);
-    }, [isMinor, guardianSelection, guardianNationalId]);
-
     useEffect(() => {
         resizeCanvas();
         window.addEventListener("resize", resizeCanvas);
         return () => window.removeEventListener("resize", resizeCanvas);
-    }, [resizeCanvas]);
+    }, [resizeCanvas, submitStatus]);
 
     // Add touch event listeners with passive: false to prevent scroll
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const handleTouchStart = (e: TouchEvent) => {
+        const preventScroll = (e: TouchEvent) => {
             e.preventDefault();
         };
 
-        const handleTouchMove = (e: TouchEvent) => {
-            e.preventDefault();
-        };
-
-        canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
-        canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+        canvas.addEventListener('touchstart', preventScroll, { passive: false });
+        canvas.addEventListener('touchmove', preventScroll, { passive: false });
 
         return () => {
-            canvas.removeEventListener('touchstart', handleTouchStart);
-            canvas.removeEventListener('touchmove', handleTouchMove);
+            canvas.removeEventListener('touchstart', preventScroll);
+            canvas.removeEventListener('touchmove', preventScroll);
         };
-    }, []);
+    }, [submitStatus]);
 
     const getCanvasContext = () => {
         const canvas = canvasRef.current;
@@ -289,9 +300,55 @@ export default function ContractSignClient({
     };
 
     const handleRetry = () => {
-        handleClearSignature();
+        setSignature({ hasDrawn: false, strokes: [] });
+        setError(null);
         setSubmitStatus("idle");
         setPdfUrl(null);
+    };
+
+    const minorFormError = (): string | null => {
+        if (!guardianSelection) return `Elige quién acompañará a ${minorFirstName} en el campamento.`;
+        if (guardianSelection === "delegate" && !guardianName.trim()) return "Escribe tu nombre completo.";
+        if (!guardianNationalId.trim()) return "Escribe tu número de cédula.";
+        if (guardianSelection === "parent") return lookupError(guardianLookup);
+        if (!delegateNationalId.trim()) return "Escribe la cédula del adulto responsable.";
+        if (delegateNationalId.trim() === guardianNationalId.trim()) return "Si tú vas al campamento, elige «Yo voy al campamento».";
+        return lookupError(delegateLookup);
+    };
+
+    const getSignatureFile = async () => {
+        const canvas = canvasRef.current;
+        if (!canvas) throw new Error("No se encontró el lienzo de firma");
+        const blob: Blob = await new Promise((resolve, reject) => {
+            canvas.toBlob((b) => {
+                if (b) resolve(b);
+                else reject(new Error("No se pudo generar la imagen de la firma"));
+            }, "image/png", 1);
+        });
+        return new File([blob], "signature.png", { type: "image/png" });
+    };
+
+    // Supabase Edge Function call, authenticated with the anon key
+    const callFunction = (slug: string, body: FormData) => {
+        const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+        return fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/${slug}`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${anonKey}`, apikey: anonKey },
+            body,
+        });
+    };
+
+    // Marks the participant as signed, emails the boarding pass and tells staff (server side)
+    const markSignedAndSendTicket = async () => {
+        const response = await fetch('/api/consent-signed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ personId: participant.id }),
+        });
+        if (!response.ok) {
+            // Not fatal for the signer: the PDF exists and staff can resend the ticket
+            console.error('Failed to register the signature:', await response.text());
+        }
     };
 
     const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -299,40 +356,20 @@ export default function ContractSignClient({
 
         if (isSubmitting) return;
 
+        const formError = isMinor ? minorFormError() : null;
+        if (formError) {
+            setError(formError);
+            return;
+        }
+
         if (!signature.hasDrawn) {
-            setError("Por favor firme el documento antes de continuar.");
+            setError("Firma dentro del recuadro antes de enviar.");
             return;
         }
 
         if (!acceptTerms) {
-            setError("Debes aceptar los términos y condiciones para continuar.");
+            setError("Marca la casilla para aceptar los términos y condiciones.");
             return;
-        }
-
-        if (isMinor && guardianSelection === null) {
-            setError("Por favor selecciona una de las opciones de autorización para menores.");
-            return;
-        }
-
-        if (isMinor) {
-            if (guardianSelection === "parent") {
-                if (!guardianName.trim() || !guardianNationalId.trim()) {
-                    setError("Por favor ingresa tu nombre y C.C. como padre/madre/tutor(a).");
-                    return;
-                }
-                if (guardianValidationError) {
-                    setError(guardianValidationError);
-                    return;
-                }
-                if (isValidatingGuardian) {
-                    setError("Por favor espera mientras validamos tu información.");
-                    return;
-                }
-            }
-            if (guardianSelection === "delegate" && !delegateNationalId.trim()) {
-                setError("Por favor ingresa la C.C. del responsable seleccionado.");
-                return;
-            }
         }
 
         setError(null);
@@ -341,253 +378,69 @@ export default function ContractSignClient({
         setPdfUrl(null);
 
         try {
-            if (isMinor && guardianSelection === "parent") {
-                // For minors with parent authorization, call create-minor-consent-pdf
-                const canvas = canvasRef.current;
-                if (!canvas) throw new Error("No se encontró el lienzo de firma");
+            const signatureFile = await getSignatureFile();
 
-                const signatureBlob: Blob = await new Promise((resolve, reject) => {
-                    canvas.toBlob((blob) => {
-                        if (blob) resolve(blob);
-                        else reject(new Error("No se pudo generar la imagen de la firma"));
-                    }, "image/png", 1);
-                });
-
-                // Get guardian ID from database using national_id
-                const guardianResults = await getAllPeople({ p_national_id: guardianNationalId.trim() });
-                if (!Array.isArray(guardianResults) || guardianResults.length === 0) {
-                    throw new Error("No se encontró el padre/madre/tutor en la base de datos");
-                }
-                const guardianId = guardianResults[0].id;
-
-                // Build FormData for minor consent PDF Edge Function
+            if (isMinor && guardianSelection === "parent" && guardianLookup.status === "found") {
                 const formData = new FormData();
-                formData.append("signature_file", new File([signatureBlob], "signature.png", { type: "image/png" }));
+                formData.append("signature_file", signatureFile);
                 formData.append("minor_id", participant.id);
-                formData.append("manager_id", guardianId);
+                formData.append("manager_id", guardianLookup.person.id);
 
-                // Use Supabase anon key for Edge Function authentication
-                const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-                // Call Supabase Edge Function to create minor consent PDF
-                const functionsUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/create-minor-consent-pdf`;
-                const response = await fetch(functionsUrl, {
-                    method: "POST",
-                    headers: {
-                        'Authorization': `Bearer ${anonKey}`,
-                        'apikey': anonKey || '',
-                    },
-                    body: formData,
-                });
-
+                const response = await callFunction("create-minor-consent-pdf", formData);
                 if (!response.ok) {
                     const text = await response.text();
                     throw new Error(text || "No se pudo generar el PDF para menor");
                 }
 
-                const pdfBlob = await response.blob();
-                const url = URL.createObjectURL(pdfBlob);
-                setPdfUrl(url);
-
-                // Update has_signed flag via RPC
-                const { error: updateError } = await supabase.rpc('update_person', {
-                    p_age: participant.age,
-                    p_checked_in: participant.checked_in,
-                    p_checked_out: participant.checked_out,
-                    p_email: participant.email,
-                    p_emergency_contact: participant.emergency_contact,
-                    p_emergency_contact_phone_number: participant.emergency_contact_phone_number,
-                    p_has_signed: true,
-                    p_id: participant.id,
-                    p_last_name_1: participant.last_name_1,
-                    p_last_name_2: participant.last_name_2,
-                    p_names: participant.names,
-                    p_national_id: participant.national_id,
-                    p_phone_number: participant.phone_number
-                });
-
-                if (updateError) {
-                    // Not fatal for user experience, but log for debugging
-                    console.error('Failed to update has_signed:', updateError);
-                }
-
-                // Send QR code email
-                try {
-                    await fetch('/api/send-email', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            to: participant.email,
-                            subject: 'Relevante Camp - Tu QR de acceso',
-                            text: `Hola ${participant.names}! Aquí tienes tu QR para el campamento.`,
-                            userId: participant.id,
-                            fullName: `${participant.names} ${participant.last_name_1} ${participant.last_name_2}`.trim(),
-                            emailType: 'ticket'
-                        })
-                    });
-                } catch (emailError) {
-                    console.error('Failed to send QR email:', emailError);
-                }
-
+                setPdfUrl(URL.createObjectURL(await response.blob()));
+                await markSignedAndSendTicket();
                 setSubmitStatus("success_minor_1");
-
-                // Scroll to top to show success message
                 window.scrollTo({ top: 0, behavior: 'smooth' });
 
-            } else if (isMinor && guardianSelection === "delegate") {
-                // For minors with delegate authorization, call minor-second-option-manager-assignment
-                const canvas = canvasRef.current;
-                if (!canvas) throw new Error("No se encontró el lienzo de firma");
-
-                const signatureBlob: Blob = await new Promise((resolve, reject) => {
-                    canvas.toBlob((blob) => {
-                        if (blob) resolve(blob);
-                        else reject(new Error("No se pudo generar la imagen de la firma"));
-                    }, "image/png", 1);
-                });
-
-                // Get guardian ID from database using delegate national_id (from the delegate input field)
-                const guardianResults = await getAllPeople({ p_national_id: delegateNationalId.trim() });
-                if (!Array.isArray(guardianResults) || guardianResults.length === 0) {
-                    throw new Error("No se encontró el responsable seleccionado en la base de datos");
-                }
-                const guardianId = guardianResults[0].id;
-
-                // Build FormData for minor consent PDF Edge Function
+            } else if (isMinor && guardianSelection === "delegate" && delegateLookup.status === "found") {
                 const formData = new FormData();
-                formData.append("signature_file", new File([signatureBlob], "signature.png", { type: "image/png" }));
+                formData.append("signature_file", signatureFile);
                 formData.append("minor_id", participant.id);
-                formData.append("manager_id", guardianId);
-                formData.append("tutor_name", guardianName);
-                formData.append("tutor_national_id", guardianNationalId);
+                formData.append("manager_id", delegateLookup.person.id);
+                formData.append("tutor_name", guardianName.trim());
+                formData.append("tutor_national_id", guardianNationalId.trim());
 
-                // Use Supabase anon key for Edge Function authentication
-                const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-                // Call Supabase Edge Function to create minor consent PDF
-                const functionsUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/minor-second-option-manager-assignment`;
-                const response = await fetch(functionsUrl, {
-                    method: "POST",
-                    headers: {
-                        'Authorization': `Bearer ${anonKey}`,
-                        'apikey': anonKey || '',
-                    },
-                    body: formData,
-                });
-
+                const response = await callFunction("minor-second-option-manager-assignment", formData);
                 if (!response.ok) {
                     const text = await response.text();
                     throw new Error(text || "No se pudo generar el PDF para menor");
                 }
 
                 setSubmitStatus("success_minor_2");
-
-                // Scroll to top to show success message
                 window.scrollTo({ top: 0, behavior: 'smooth' });
 
-            } else {
-                // For adults, proceed with PDF generation
-                // Convert canvas to PNG blob
-                const canvas = canvasRef.current;
-                if (!canvas) throw new Error("No se encontró el lienzo de firma");
-
-                const signatureBlob: Blob = await new Promise((resolve, reject) => {
-                    canvas.toBlob((blob) => {
-                        if (blob) resolve(blob);
-                        else reject(new Error("No se pudo generar la imagen de la firma"));
-                    }, "image/png", 1);
-                });
-
-                // Build FormData for Edge Function
+            } else if (!isMinor) {
                 const formData = new FormData();
                 formData.append("person_id", participant.id);
-                formData.append(
-                    "signature",
-                    new File([signatureBlob], "signature.png", { type: "image/png" })
-                );
+                formData.append("signature", signatureFile);
 
-                // Use Supabase anon key for Edge Function authentication
-                const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-                // Call Supabase Edge Function to create PDF
-                const functionsUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/create-consent-pdf`;
-                const response = await fetch(functionsUrl, {
-                    method: "POST",
-                    headers: {
-                        'Authorization': `Bearer ${anonKey}`,
-                        'apikey': anonKey || '',
-                    },
-                    body: formData,
-                });
-
+                const response = await callFunction("create-consent-pdf", formData);
                 if (!response.ok) {
                     const text = await response.text();
                     throw new Error(text || "No se pudo generar el PDF");
                 }
 
-                const pdfBlob = await response.blob();
-                const url = URL.createObjectURL(pdfBlob);
+                const url = URL.createObjectURL(await response.blob());
                 setPdfUrl(url);
-
-                // Update has_signed flag via RPC
-                const { error: updateError } = await supabase.rpc('update_person', {
-                    p_age: participant.age,
-                    p_checked_in: participant.checked_in,
-                    p_checked_out: participant.checked_out,
-                    p_email: participant.email,
-                    p_emergency_contact: participant.emergency_contact,
-                    p_emergency_contact_phone_number: participant.emergency_contact_phone_number,
-                    p_has_signed: true,
-                    p_id: participant.id,
-                    p_last_name_1: participant.last_name_1,
-                    p_last_name_2: participant.last_name_2,
-                    p_names: participant.names,
-                    p_national_id: participant.national_id,
-                    p_phone_number: participant.phone_number
-                });
-
-                if (updateError) {
-                    // Not fatal for user experience, but log for debugging
-                    console.error('Failed to update has_signed:', updateError);
-                }
-
-                // Send QR code email
-                try {
-                    await fetch('/api/send-email', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            to: participant.email,
-                            subject: 'Relevante Camp - Tu QR de acceso',
-                            text: `Hola ${participant.names}! Aquí tienes tu QR para el campamento.`,
-                            userId: participant.id,
-                            fullName: `${participant.names} ${participant.last_name_1} ${participant.last_name_2}`.trim(),
-                            emailType: 'ticket'
-                        })
-                    });
-                } catch (emailError) {
-                    console.error('Failed to send QR email:', emailError);
-                }
-
+                await markSignedAndSendTicket();
                 setSubmitStatus("success");
-
-                // Scroll to top to show success message
                 window.scrollTo({ top: 0, behavior: 'smooth' });
 
                 // Store PDF URL in sessionStorage for the success page
-                if (url) {
-                    sessionStorage.setItem('pdfUrl', url);
-                    sessionStorage.setItem('participantId', participant.national_id);
-                }
+                sessionStorage.setItem('pdfUrl', url);
+                sessionStorage.setItem('participantId', participant.national_id);
 
-                // Redirect to success page after a short delay
                 setTimeout(() => {
                     router.push("/success");
                 }, 2000);
             }
         } catch (err: unknown) {
             console.error(err);
-            handleClearSignature();
             setSubmitStatus("error");
             setError(err instanceof Error ? err.message : "Ocurrió un error al enviar la firma.");
         } finally {
@@ -595,412 +448,308 @@ export default function ContractSignClient({
         }
     };
 
-    // Declaration content provided by the user
-    const declarationTitle = "CONSENTIMIENTO VOLUNTARIO E INFORMADO DE PARTICIPACIÓN RELEVANTE CAMP 2025";
+    const guardianOptions = [
+        {
+            value: "parent" as const,
+            title: "Yo voy al campamento",
+            description: `Estoy inscrito(a) como campista y seré el responsable de ${minorFirstName}.`,
+        },
+        {
+            value: "delegate" as const,
+            title: "Va con otro adulto",
+            description: `Autorizo a un adulto inscrito en el campamento para que sea el responsable de ${minorFirstName}.`,
+        },
+    ];
 
     return (
-        <div className="min-h-screen bg-slate-100 py-10 px-4 sm:px-6 lg:px-8 relative">
+        <div className="min-h-screen px-4 py-10 sm:px-6 lg:px-8 relative">
             {isSubmitting && (
                 <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center text-center z-50">
                     <div className="relative">
-                        <div className="h-16 w-16 border-4 border-slate-200 rounded-full"></div>
-                        <div className="absolute top-0 left-0 h-16 w-16 border-4 border-[#9bc3db] border-t-transparent rounded-full animate-spin"></div>
+                        <div className="h-16 w-16 border-4 border-ink/15 rounded-full"></div>
+                        <div className="absolute top-0 left-0 h-16 w-16 border-4 border-vermilion border-t-transparent rounded-full animate-spin"></div>
                     </div>
-                    <h3 className="mt-6 text-xl font-bold text-slate-900">Generando tu documento...</h3>
-                    <p className="mt-2 text-slate-600">Estamos creando tu PDF y registrando tu firma.</p>
+                    <h3 className="mt-6 text-xl font-bold text-ink">Generando tu documento...</h3>
+                    <p className="mt-2 text-ink/70">Estamos creando tu PDF y registrando tu firma.</p>
                 </div>
             )}
-            <div className="max-w-4xl mx-auto">
-                <div className="text-center mb-10">
-                    <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-                        {declarationTitle}
+            <div className="mx-auto max-w-3xl">
+                <div className="mb-8 text-center">
+                    <Wordmark className="text-vermilion text-2xl sm:text-3xl mb-8" />
+                    <h1 className="font-display text-lg sm:text-2xl text-oxblood leading-snug">
+                        {consentTitle}
                     </h1>
-                    <p className="mt-4 text-lg text-slate-600">
-                        Por favor lee cuidadosamente el documento y firma al final para confirmar tu participación.
+                    <p className="mx-auto mt-4 max-w-xl text-ink/70">
+                        {isMinor
+                            ? `${minorFirstName} es menor de edad. Su padre, madre o tutor(a) debe completar estos pasos y firmar al final.`
+                            : "Lee el documento y fírmalo al final para confirmar tu participación."}
                     </p>
                 </div>
 
-                <section className="bg-white shadow-2xl rounded-3xl border border-slate-200 overflow-hidden">
-                    <header className="px-8 py-6 border-b border-slate-100 bg-slate-50">
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                            <div>
-                                <p className="text-sm uppercase tracking-wider text-slate-500 font-semibold">Participante</p>
-                                <div className="flex items-center gap-3">
-                                    <h2 className="text-2xl font-bold text-slate-900">
-                                        {participant.names} {participant.last_name_1} {participant.last_name_2}
-                                    </h2>
-                                    {isMounted && isMinor && (
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-700 border border-orange-200">
-                                            Menor de edad
-                                        </span>
-                                    )}
-                                </div>
-                                <p className="text-sm text-slate-600 mt-1">C.C. {participant.national_id}</p>
-                            </div>
-                        </div>
+                <div className="bg-white rounded-2xl border border-ink/15 overflow-hidden">
+                    <header className="px-5 py-5 sm:px-8 bg-parchment/40">
+                        <p className="text-sm font-semibold text-ink/60">{isMinor ? "Campista menor de edad" : "Participante"}</p>
+                        <p className="mt-0.5 text-xl font-bold text-ink">{fullName(participant)}</p>
+                        <p className="mt-0.5 text-sm text-ink/70">{isMinor ? "T.I." : "C.C."} {participant.national_id}</p>
                     </header>
 
-                    <article className="px-8 py-8 space-y-8">
-
-                        {!isSubmitting && submitStatus === "success_minor_1" && pdfUrl && (
-                            <div className="rounded-3xl border-2 border-green-200 bg-green-50 p-8 text-center shadow-xl">
-                                <div className="mx-auto h-14 w-14 rounded-full bg-green-500 flex items-center justify-center">
-                                    <svg className="h-8 w-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                </div>
-                                <h3 className="mt-6 text-2xl font-extrabold text-green-800">¡Firma enviada con éxito!</h3>
-                                <p className="mt-2 text-green-800/80">El consentimiento de tu hijo(a) ha sido registrado correctamente. Aquí tienes el PDF para que lo imprima o descargue:</p>
-                                <a href={pdfUrl} target="_blank" rel="noopener noreferrer" className="mt-2 text-green-800/80">
-                                    <button className="px-6 py-3 rounded-2xl text-sm font-bold text-white shadow-xl" style={{ backgroundColor: "#9bc3db" }}>
-                                        Ver PDF
-                                    </button>
+                    {!isSubmitting && submitStatus === "success_minor_1" && pdfUrl && (
+                        <div className="border-t border-ink/10 px-5 py-10 sm:px-8 text-center">
+                            {successIcon}
+                            <h2 className="mt-6 text-2xl font-bold text-glass">Autorización firmada</h2>
+                            <p className="mt-2 text-ink/80">El consentimiento de {minorFirstName} quedó registrado. Guarda una copia del PDF:</p>
+                            <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+                                <a href={pdfUrl} target="_blank" rel="noopener noreferrer" className="inline-flex justify-center rounded-xl bg-oxblood px-6 py-3 text-sm font-bold text-white hover:bg-oxblood/90">
+                                    Ver PDF
                                 </a>
-                                {pdfUrl && (
-                                    <button
-                                        className="ml-4 px-6 py-3 rounded-2xl text-sm font-bold text-white shadow-xl"
-                                        style={{ backgroundColor: "#1d5c81" }}
-                                        onClick={() => {
-                                            // Create a temporary <a> element to force download
-                                            const link = document.createElement('a');
-                                            link.href = pdfUrl;
-                                            link.download = "consentimiento.pdf";
-                                            document.body.appendChild(link);
-                                            link.click();
-                                            document.body.removeChild(link);
-                                        }}
-                                    >
-                                        Descargar PDF
-                                    </button>
-                                )}
+                                <a href={pdfUrl} download="consentimiento.pdf" className="inline-flex justify-center rounded-xl border border-ink/20 bg-white px-6 py-3 text-sm font-bold text-ink hover:bg-ink/5">
+                                    Descargar PDF
+                                </a>
                             </div>
-                        )}
+                        </div>
+                    )}
 
+                    {!isSubmitting && submitStatus === "success_minor_2" && (
+                        <div className="border-t border-ink/10 px-5 py-10 sm:px-8 text-center">
+                            {successIcon}
+                            <h2 className="mt-6 text-2xl font-bold text-glass">Autorización firmada</h2>
+                            <p className="mt-2 text-ink/80">
+                                Enviamos un correo a {delegateLookup.status === "found" ? fullName(delegateLookup.person) : "el responsable"} para
+                                que también firme. Cuando lo haga, {minorFirstName} recibirá su QR de acceso.
+                            </p>
+                        </div>
+                    )}
 
-                        {!isSubmitting && submitStatus === "success_minor_2" && (
-                            <div className="rounded-3xl border-2 border-green-200 bg-green-50 p-8 text-center shadow-xl">
-                                <div className="mx-auto h-14 w-14 rounded-full bg-green-500 flex items-center justify-center">
-                                    <svg className="h-8 w-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                </div>
-                                <h3 className="mt-6 text-2xl font-extrabold text-green-800">¡Firma enviada con éxito!</h3>
-                                <p className="mt-2 text-green-800/80">El responsable asignado será notificado por correo electrónico para completar el proceso.</p>
+                    {!isSubmitting && submitStatus === "success" && (
+                        <div className="border-t border-ink/10 px-5 py-10 sm:px-8 text-center">
+                            {successIcon}
+                            <h2 className="mt-6 text-2xl font-bold text-glass">Consentimiento firmado</h2>
+                            <p className="mt-2 text-ink/80">Tu consentimiento quedó registrado.</p>
+                            <p className="mt-2 text-sm text-glass">Redirigiendo en unos momentos...</p>
+                        </div>
+                    )}
+
+                    {!isSubmitting && submitStatus === "error" && (
+                        <div className="border-t border-ink/10 px-5 py-10 sm:px-8 text-center">
+                            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-vermilion">
+                                <svg className="h-8 w-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
                             </div>
-                        )}
+                            <h2 className="mt-6 text-2xl font-bold text-oxblood">No se pudo enviar la firma</h2>
+                            {error && <p className="mt-2 text-oxblood/80">{error}</p>}
+                            <button
+                                type="button"
+                                onClick={handleRetry}
+                                className="mt-6 rounded-xl bg-oxblood px-6 py-3 text-sm font-bold text-white hover:bg-oxblood/90"
+                            >
+                                Intentar nuevamente
+                            </button>
+                        </div>
+                    )}
 
-
-
-                        {!isSubmitting && submitStatus === "success" && (
-                            <div className="rounded-3xl border-2 border-green-200 bg-green-50 p-8 text-center shadow-xl">
-                                <div className="mx-auto h-14 w-14 rounded-full bg-green-500 flex items-center justify-center">
-                                    <svg className="h-8 w-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                </div>
-                                <h3 className="mt-6 text-2xl font-extrabold text-green-800">¡Firma enviada con éxito!</h3>
-                                <p className="mt-2 text-green-800/80">Tu consentimiento ha sido registrado correctamente.</p>
-                                <p className="mt-2 text-green-700 text-sm">Redirigiendo en unos momentos...</p>
-                            </div>
-                        )}
-
-                        {!isSubmitting && submitStatus === "error" && (
-                            <div className="rounded-3xl border-2 border-red-200 bg-red-50 p-8 text-center shadow-xl">
-                                <div className="mx-auto h-14 w-14 rounded-full bg-red-500 flex items-center justify-center">
-                                    <svg className="h-8 w-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </div>
-                                <h3 className="mt-6 text-2xl font-extrabold text-red-800">No se pudo enviar la firma</h3>
-                                {error && <p className="mt-2 text-red-800/80">{error}</p>}
-                                <div className="mt-6">
-                                    <button
-                                        type="button"
-                                        onClick={handleRetry}
-                                        className="px-6 py-3 rounded-2xl text-sm font-bold text-white shadow-xl"
-                                        style={{ backgroundColor: "#9bc3db" }}
-                                    >
-                                        Intentar nuevamente
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                        <div className="space-y-6">
-                            <div>
-                                <p className="mt-4 text-slate-700 leading-relaxed">
-                                    RELEVANTE CAMP es una actividad promovida del Ministerio de Jóvenes VIDA de la Iglesia Centro Bíblico
-                                    Internacional de Cartagena en el ejercicio del derecho fundamental a la libertad religiosa y de cultos
-                                    consagrada en el artículo 19 de la Constitución Política de Colombia. En ese sentido, la actividad busca
-                                    unir a los campistas en prácticas colectivas de actos de oración, culto, enseñanza y festividades de
-                                    conformidad a las creencias religiosas que profesamos.
-                                </p>
-                                {isMounted && isMinor ? (
-                                    <>
-                                        <p className="mt-4 text-slate-700 leading-relaxed">
-                                            Yo,
-                                            <input
-                                                type="text"
-                                                value={guardianName}
-                                                onChange={(e) => setGuardianName(e.target.value)}
-                                                placeholder="Nombre del padre/madre/tutor"
-                                                className="mx-2 inline-block px-3 py-1 rounded-lg border border-slate-300 text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                style={{ minWidth: 220 }}
-                                            />
-                                            identificado(a) con C.C. No.
-                                            <input
-                                                type="text"
-                                                inputMode="numeric"
-                                                value={guardianNationalId}
-                                                onChange={(e) => setGuardianNationalId(e.target.value)}
-                                                placeholder="Número de C.C."
-                                                className="mx-2 inline-block px-3 py-1 rounded-lg border border-slate-300 text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                style={{ minWidth: 180 }}
-                                            />
-                                            {guardianSelection === "parent" && isValidatingGuardian && (
-                                                <span className="text-xs text-slate-500 ml-2">Validando...</span>
-                                            )}
-                                            , en calidad de padre, madre o tutor(a), autorizo la participación de mi hijo(a) {participant.names} {participant.last_name_1} {participant.last_name_2}, identificado(a) con T.I. No. {participant.national_id}, en la actividad RELEVANTE CAMP. Declaro que conozco el listado de actividades programadas para los campistas y acepto su participación en todas, salvo aquellas que se indiquen expresamente en las observaciones o anotaciones.
-                                        </p>
-                                        {guardianSelection === "parent" && guardianValidationError && (
-                                            <div className="mt-2 p-3 rounded-lg border border-red-200 bg-red-50">
-                                                <p className="text-sm text-red-700 font-semibold">{guardianValidationError}</p>
+                    {submitStatus === "idle" && (
+                        <form onSubmit={handleSubmit} noValidate>
+                            {isMinor && (
+                                <>
+                                    <Step n={1} title={`¿Quién acompañará a ${minorFirstName} en el campamento?`}>
+                                        <fieldset>
+                                            <legend className="sr-only">Responsable del menor durante el campamento</legend>
+                                            <div className="grid gap-3 sm:grid-cols-2">
+                                                {guardianOptions.map((option) => {
+                                                    const selected = guardianSelection === option.value;
+                                                    return (
+                                                        <label
+                                                            key={option.value}
+                                                            className={`flex cursor-pointer gap-3 rounded-xl border p-4 transition-colors ${selected ? "border-oxblood bg-oxblood/5 ring-1 ring-oxblood" : "border-ink/20 bg-white hover:border-ink/40"}`}
+                                                        >
+                                                            <input
+                                                                type="radio"
+                                                                name="guardian-option"
+                                                                value={option.value}
+                                                                checked={selected}
+                                                                onChange={() => { setGuardianSelection(option.value); setError(null); }}
+                                                                className="mt-1 h-4 w-4 flex-none accent-oxblood"
+                                                            />
+                                                            <span>
+                                                                <span className="block font-semibold text-ink">{option.title}</span>
+                                                                <span className="mt-1 block text-sm text-ink/70">{option.description}</span>
+                                                            </span>
+                                                        </label>
+                                                    );
+                                                })}
                                             </div>
-                                        )}
-                                        <p className="mt-4 text-slate-700 leading-relaxed">
-                                            Acepto y entiendo que el personal que dirigirá el Campamento se esfuerza por proporcionar un ambiente seguro y supervisado; sin embargo, reconozco que existen ciertos riesgos inherentes a las actividades al aire libre, así como la posibilidad de situaciones imprevistas. Entiendo que el Campamento adoptará todas las medidas razonables para garantizar la seguridad de los participantes; por ello, eximo de responsabilidad a la Iglesia Centro Bíblico Internacional y a los organizadores del evento por cualquier lesión, pérdida o daño material o personal que pueda ocurrir durante el Campamento, siempre que no medie dolo o culpa grave de su parte.
-                                        </p>
-                                        <p className="mt-4 text-slate-700 leading-relaxed">
-                                            Autorizo a los organizadores del Campamento a utilizar fotografías, videos u otros medios de grabación que incluyan la imagen de mi hijo(a), con fines promocionales o educativos, siempre que no se vulnere su integridad ni su privacidad. Entiendo que las actividades del Campamento se realizarán en el predio privado La Niclala, ubicado en la Isla de Bocachica, cuyas instalaciones, zonas de descanso, piscinas y servicios de alimentación son proporcionados por la Finca La Niclala, y no por la Iglesia Centro Bíblico Internacional de Cartagena. En consecuencia, libero de toda responsabilidad al Campamento y a la Iglesia respecto de los servicios prestados por la Finca La Niclala. También reconozco que empresas privadas serán las encargadas del transporte marítimo a los campistas desde la ciudad de Cartagena hasta la Isla de Bocachica.
+                                        </fieldset>
+                                    </Step>
 
-                                        </p>
-                                        <p className="mt-4 text-slate-700 leading-relaxed">
-                                            En ese sentido, autorizo de manera voluntaria y libre la participación de mi hijo(a) en el Campamento RELEVANTE CAMP, comprometiéndome a que cumpla las indicaciones generales del evento anexas a este documento. Acepto las restricciones de seguridad y salubridad que se consideren necesarias, y promoveré las acciones de autocuidado pertinentes.
+                                    <Step
+                                        n={2}
+                                        title="Tus datos"
+                                        hint={guardianSelection === "parent"
+                                            ? "Con tu cédula buscamos tu inscripción en el campamento."
+                                            : "Como padre, madre o tutor(a) del menor."}
+                                    >
+                                        {!guardianSelection ? (
+                                            <p className="text-sm text-ink/60">Primero elige una opción en el paso 1.</p>
+                                        ) : (
+                                            <div className="space-y-5">
+                                                <div className="grid gap-5 sm:grid-cols-2">
+                                                    {guardianSelection === "delegate" && (
+                                                        <div>
+                                                            <label htmlFor="guardian-name" className={labelClass}>Tu nombre completo</label>
+                                                            <input
+                                                                id="guardian-name"
+                                                                type="text"
+                                                                autoComplete="name"
+                                                                value={guardianName}
+                                                                onChange={(e) => setGuardianName(e.target.value)}
+                                                                className={inputClass}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                    <div>
+                                                        <label htmlFor="guardian-id" className={labelClass}>Tu número de cédula (C.C.)</label>
+                                                        <input
+                                                            id="guardian-id"
+                                                            type="text"
+                                                            inputMode="numeric"
+                                                            autoComplete="off"
+                                                            value={guardianNationalId}
+                                                            onChange={(e) => setGuardianNationalId(e.target.value.replace(/\s/g, ""))}
+                                                            aria-describedby={guardianSelection === "parent" ? "guardian-lookup" : undefined}
+                                                            className={inputClass}
+                                                        />
+                                                        {guardianSelection === "parent" && <LookupNote lookup={guardianLookup} id="guardian-lookup" />}
+                                                    </div>
+                                                </div>
 
-                                        </p>
-                                        <p className="mt-4 text-slate-700 leading-relaxed">
-                                            Por otra parte, manifiesto de manera voluntaria mi decisión de autorizar el viaje y la participación de mi hijo(a) en el Campamento, comprometiéndome a no presentar denuncia, queja o acción alguna frente a la Iglesia Centro Bíblico Internacional de Cartagena por hechos derivados de esta actividad. Así mismo, me comprometo a proveer a mi hijo(a) el equipo de protección personal necesario y a garantizar que cumpla las normas de bioseguridad establecidas para la protección y bienestar de todos los participantes.
-                                        </p>
-                                    </>
-                                ) : (
-                                    <>
-                                        <p className="mt-4 text-slate-700 leading-relaxed">
-                                            Yo {participant.names} {participant.last_name_1} {participant.last_name_2} identificado con C.C. No. {participant.national_id}, manifiesto mi
-                                            participación voluntaria y bajo mi propia responsabilidad en el RELEVANTE CAMP, de ahora en adelante Campamento.
-                                            Así mismo, declaro que conozco el listado de actividades que se programarán para los campistas, por lo que acepto
-                                            participar en todas las actividades que se dispongan, salvo las que se expresen en las observaciones y anotaciones.
-                                        </p>
-                                        <p className="mt-4 text-slate-700 leading-relaxed">
-                                            Yo acepto y entiendo que el personal que dirigirá el Campamento se esfuerza por proporcionar un ambiente seguro y
-                                            supervisado, pero reconozco y acepto que existen ciertos riesgos inherentes en las actividades al aire libre y
-                                            podría estar expuestos a situaciones imprevistas. Entiendo que el Campamento hará todo lo posible para garantizar
-                                            la seguridad de los participantes, así que eximo de responsabilidad a la Iglesia Centro Bíblico Internacional y a
-                                            los organizadores del Campamento por lesiones, pérdidas, daños materiales o personales que puedan ocurrir durante
-                                            el campamento, siempre que no medie dolo o culpa grave de su parte.
-                                        </p>
-                                        <p className="mt-4 text-slate-700 leading-relaxed">
-                                            Autorizo a los organizadores del campamento para utilizar fotografías, videos u otros medios de grabación que
-                                            incluyan mi imagen para propósito promocionales o educativos, siempre y cuando no se violente mi integridad y que
-                                            se respete mi privacidad y seguridad en todas las publicaciones. Entiendo que las actividades del Campamento se
-                                            realizarán en el predio privado LA NICLALA en la Isla Bocachica, por lo que las instalaciones como habitaciones,
-                                            zonas de descanso, piscinas, así como las comidas son proporcionados por la Finca La Niclala, y no por la Iglesia
-                                            Centro Bíblico Internacional de Cartagena, por lo que declaro que libero de total responsabilidad al Campamento y a
-                                            la Iglesia de los servicios prestados por la Finca La Niclala. También acepto que conozco que empresas privadas
-                                            prestarán el servicio de transporte marítimo desde la ciudad de Cartagena a la Isla Bocachica.
-                                        </p>
-                                        <p className="mt-4 text-slate-700 leading-relaxed">
-                                            En ese sentido, autorizo de manera voluntaria y libre mi participación en el Campamento RELEVANTE CAMP,
-                                            comprometiéndome a dar cumplimiento a las indicaciones generales del campamento que se anexan a este documento,
-                                            por lo que acataré las restricciones que se fijen como necesarias de seguridad y salubridad, así como cumplir con
-                                            las acciones de autocuidado.
-                                        </p>
-                                        <p className="mt-4 text-slate-700 leading-relaxed">
-                                            Por otra parte, siendo que de manera voluntaria expreso mi deseo de autorizar viaje y campamento, me comprometo a
-                                            no presentar ninguna denuncia, queja y/o algún tipo de acción frente a la Iglesia Centro Bíblico Internacional de
-                                            la ciudad de Cartagena. De la misma manera me comprometo llevar equipo de protección personal necesario y requerido
-                                            por el Campamento, así mismo, me comprometo a cumplir todas las normas de bioseguridad establecidas para protegerme,
-                                            proteger a los demás, de manera íntegra y velando por la salud de todos los participantes del viaje y campamento
-                                            conforme a lo dispuesto por los organizadores del evento.
-                                        </p>
-                                        <p className="mt-4 text-slate-700 leading-relaxed">
-                                            Para los efectos legales pertinentes, suscribo el presente documento de forma voluntaria hoy {isMounted ? todayFormatted : ""}.
-                                        </p>
-                                    </>
-                                )}
-                            </div>
-
-                            {isMounted && isMinor && (
-                                <div className="space-y-4 mt-6">
-                                    <label className="flex items-start space-x-3">
-                                        <input
-                                            type="checkbox"
-                                            checked={guardianSelection === "parent"}
-                                            onChange={() => setGuardianSelection("parent")}
-                                            className="mt-3 h-3 w-3 rounded border border-slate-600 accent-blue-600 focus:ring-blue-500 transform scale-150"
-                                        />
-                                        <span className=" text-slate-900 leading-relaxed">
-                                            En virtud de mi participación en el Campamento, me comprometo a velar por la seguridad e integridad de mi hijo(a)
-                                            durante el desarrollo de las actividades, y a colaborar con los organizadores cumpliendo con las normas establecidas
-                                            para el evento.
-                                        </span>
-                                    </label>
-
-                                    <label className="flex items-start space-x-3">
-                                        <input
-                                            type="checkbox"
-                                            checked={guardianSelection === "delegate"}
-                                            onChange={() => setGuardianSelection("delegate")}
-                                            className="mt-3 h-3 w-3 rounded border border-slate-600 accent-blue-600 focus:ring-blue-500 transform scale-150"
-                                        />
-                                        <div className="flex-1 space-y-2">
-                                            <span className="text-slate-900 leading-relaxed block">
-                                                Por medio del presente documento, autorizo a {delegateFullName || "_______________________________"}, identificado con C.C. No. {delegateNationalId || "____________________"},
-                                                para que actúe como responsable de mi hijo(a) durante el Campamento, vele por su seguridad y coopere con los organizadores
-                                                en el cumplimiento de las medidas establecidas para su adecuada ejecución.
-                                            </span>
-                                            <div className="flex items-center gap-3">
-                                                <input
-                                                    type="text"
-                                                    inputMode="numeric"
-                                                    placeholder="C.C. del responsable"
-                                                    value={delegateNationalId}
-                                                    onChange={(e) => { setDelegateNationalId(e.target.value); setDelegateFullName(""); }}
-                                                    disabled={guardianSelection !== "delegate"}
-                                                    className="w-full sm:w-64 px-4 py-2 rounded-xl border border-slate-600 text-slate-900 placeholder-slate-500 shadow-sm disabled:bg-slate-100 disabled:text-slate-400"
-                                                />
-                                                {isSearchingDelegate && (
-                                                    <span className="text-xs text-slate-500">Buscando...</span>
+                                                {guardianSelection === "delegate" && (
+                                                    <div className="rounded-xl bg-parchment/50 p-4">
+                                                        <label htmlFor="delegate-id" className={labelClass}>Cédula del adulto responsable</label>
+                                                        <p id="delegate-hint" className="mb-2 text-sm text-ink/60">
+                                                            Debe estar inscrito(a) en el campamento. Le enviaremos un correo para que también firme.
+                                                        </p>
+                                                        <input
+                                                            id="delegate-id"
+                                                            type="text"
+                                                            inputMode="numeric"
+                                                            autoComplete="off"
+                                                            value={delegateNationalId}
+                                                            onChange={(e) => setDelegateNationalId(e.target.value.replace(/\s/g, ""))}
+                                                            aria-describedby="delegate-hint delegate-lookup"
+                                                            className={`${inputClass} sm:max-w-xs`}
+                                                        />
+                                                        <LookupNote lookup={delegateLookup} id="delegate-lookup" />
+                                                    </div>
                                                 )}
                                             </div>
-                                            {guardianSelection === "delegate" && delegateNationalId.trim() && !isSearchingDelegate && !delegateFullName && (
-                                                <p className="text-xs font-semibold text-red-600">No se encontró ninguna persona con esa identificación.</p>
-                                            )}
-                                        </div>
-                                    </label>
-                                </div>
+                                        )}
+                                    </Step>
+                                </>
                             )}
 
-                            {submitStatus === "idle" && !isSubmitting && (
-                                <form onSubmit={handleSubmit} className="space-y-8">
-                                    <div>
-                                        <h3 className="text-xl font-bold text-slate-800 pb-2">Firma electrónica</h3>
-                                        <p className="text-sm text-slate-500 mb-4">
-                                            Por favor firma dentro del recuadro utilizando tu dedo (en dispositivos táctiles) o el cursor (en
-                                            computadoras).
-                                        </p>
-                                        <div ref={containerRef} className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-4">
-                                            <canvas
-                                                ref={canvasRef}
-                                                className="w-full rounded-2xl bg-white shadow-inner touch-none"
-                                                style={{ touchAction: "none" }}
-                                                onPointerDown={handlePointerDown}
-                                                onPointerMove={handlePointerMove}
-                                                onPointerUp={handlePointerUp}
-                                                onPointerLeave={handlePointerLeave}
-                                                onPointerCancel={handlePointerUp}
-                                                onContextMenu={(e) => e.preventDefault()}
-                                            />
-                                            <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                                <p className="text-xs text-slate-500">
-                                                    Al firmar confirmas tu identidad y aceptación de los términos presentados.
-                                                </p>
-                                                <button
-                                                    type="button"
-                                                    onClick={handleClearSignature}
-                                                    className="inline-flex items-center justify-center px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 transition"
-                                                >
-                                                    Limpiar firma
-                                                </button>
-                                            </div>
-                                        </div>
-                                        <div className="mt-4 col grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-slate-700">
-                                            <div>
-                                                <span className="font-semibold">Nombre:</span>
-                                                <span className="ml-2">{participant.names} {participant.last_name_1} {participant.last_name_2}</span>
-                                            </div>
-                                            <div>
-                                                <span className="font-semibold">C.C.:</span>
-                                                <span className="ml-2">{participant.national_id}</span>
-                                            </div>
-                                            <div>
-                                                <span className="font-semibold">Email:</span>
-                                                <span className="ml-2">{participant.email}</span>
-                                            </div>
-                                        </div>
-                                    </div>
+                            <Step
+                                n={isMinor ? 3 : 1}
+                                title="Lee el documento"
+                                hint={isMinor ? "Lo que escribiste arriba aparece en negrita." : undefined}
+                            >
+                                {isMinor ? (
+                                    <MinorConsent
+                                        minor={participant}
+                                        tutorName={guardianSelection === "parent"
+                                            ? (guardianLookup.status === "found" ? fullName(guardianLookup.person) : undefined)
+                                            : guardianName.trim()}
+                                        tutorNationalId={guardianNationalId.trim()}
+                                        option={guardianSelection}
+                                        delegateName={delegateLookup.status === "found" ? fullName(delegateLookup.person) : undefined}
+                                        delegateNationalId={delegateLookup.status === "found" ? delegateNationalId.trim() : undefined}
+                                    />
+                                ) : (
+                                    <AdultConsent person={participant} date={todayFormatted} />
+                                )}
+                            </Step>
 
-                                    <div className="space-y-4">
-                                        <label className="flex items-start space-x-3">
-                                            <input
-                                                type="checkbox"
-                                                checked={acceptTerms}
-                                                onChange={(event) => setAcceptTerms(event.target.checked)}
-                                                className="mt-1 h-5 w-5 rounded border border-slate-300 text-blue-600 focus:ring-blue-500"
-                                            />
-                                            <span className="text-sm text-slate-700 leading-relaxed">
-                                                Declaro que he leído y acepto los términos y condiciones establecidos para la participación en
-                                                el campamento, incluyendo las políticas de seguridad, convivencia y uso de imagen.
-                                            </span>
-                                        </label>
-                                    </div>
-
-                                    {error && (
-                                        <div className="rounded-2xl border-2 border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 font-semibold">
-                                            {error}
-                                        </div>
-                                    )}
-
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                                        <div className="text-sm text-slate-500">
-                                            <p>Al enviar este formulario se registrará la firma electrónica y se actualizará tu estado.</p>
-                                            <p className="mt-1">Recibirás una copia del acuerdo en tu correo electrónico.</p>
-                                        </div>
-
+                            <Step
+                                n={isMinor ? 4 : 2}
+                                title={isMinor ? "Firma del padre, madre o tutor(a)" : "Tu firma"}
+                                hint="Firma dentro del recuadro con el dedo o con el mouse."
+                            >
+                                <div ref={containerRef} className="rounded-2xl border-2 border-dashed border-ink/15 bg-parchment/40 p-3">
+                                    <canvas
+                                        ref={canvasRef}
+                                        aria-label="Recuadro de firma"
+                                        className="w-full rounded-xl bg-white shadow-inner touch-none"
+                                        style={{ touchAction: "none" }}
+                                        onPointerDown={handlePointerDown}
+                                        onPointerMove={handlePointerMove}
+                                        onPointerUp={handlePointerUp}
+                                        onPointerLeave={handlePointerLeave}
+                                        onPointerCancel={handlePointerUp}
+                                        onContextMenu={(e) => e.preventDefault()}
+                                    />
+                                    <div className="mt-3 flex justify-end">
                                         <button
-                                            type="submit"
-                                            disabled={isSubmitting}
-                                            className="inline-flex items-center justify-center px-6 py-3 rounded-2xl text-base font-bold text-white shadow-xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-2xl disabled:opacity-60 disabled:cursor-not-allowed"
-                                            style={{ backgroundColor: "#9bc3db" }}
+                                            type="button"
+                                            onClick={handleClearSignature}
+                                            className="rounded-lg border border-ink/15 bg-white px-4 py-2 text-sm font-semibold text-ink/70 hover:bg-ink/5"
                                         >
-                                            {isSubmitting ? (
-                                                <>
-                                                    <span className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
-                                                    Enviando...
-                                                </>
-                                            ) : (
-                                                <>Enviar firma</>
-                                            )}
+                                            Borrar firma
                                         </button>
                                     </div>
-                                </form>
-                            )}
-                        </div>
-                    </article>
-                </section>
+                                </div>
 
-                <div className="mt-10 flex flex-col items-center gap-6">
-                    {/* Logos centered */}
-                    <div className="flex items-center justify-center gap-8">
-                        <img
-                            src="/logos/relevante_logo_brown.PNG"
-                            alt="Relevante Camp"
-                            className="h-12 w-auto object-contain"
-                            loading="lazy"
-                        />
-                        <img
-                            src="/logos/vida_logo_black.PNG"
-                            alt="Ministerio Juvenil VIDA"
-                            className="h-16 w-auto object-contain"
-                            loading="lazy"
-                        />
-                    </div>
+                                <label className="mt-6 flex items-start gap-3">
+                                    <input
+                                        type="checkbox"
+                                        checked={acceptTerms}
+                                        onChange={(event) => setAcceptTerms(event.target.checked)}
+                                        className="mt-0.5 h-5 w-5 flex-none accent-oxblood"
+                                    />
+                                    <span className="text-sm leading-relaxed text-ink/80">
+                                        Declaro que he leído y acepto los términos y condiciones establecidos para la participación en
+                                        el campamento, incluyendo las políticas de seguridad, convivencia y uso de imagen.
+                                    </span>
+                                </label>
+
+                                {error && (
+                                    <p role="alert" className="mt-6 rounded-xl border border-vermilion/40 bg-vermilion/5 px-4 py-3 text-sm font-semibold text-oxblood">
+                                        {error}
+                                    </p>
+                                )}
+
+                                <button
+                                    type="submit"
+                                    disabled={isSubmitting}
+                                    className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-xl bg-oxblood px-6 text-base font-bold text-white transition-colors hover:bg-oxblood/90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                                >
+                                    Firmar y enviar
+                                </button>
+                                <p className="mt-3 text-sm text-ink/60">
+                                    {isMinor && guardianSelection === "delegate"
+                                        ? "El responsable recibirá un correo para firmar también."
+                                        : "Recibirás tu código QR de acceso en tu correo electrónico."}
+                                </p>
+                            </Step>
+                        </form>
+                    )}
                 </div>
 
-                <footer className="mt-8 text-center text-sm text-slate-500">
-                    <p>Si tienes preguntas o necesitas asistencia, contacta a nuestro equipo en lizpaolamorillo1@gmail.com.</p>
+                <div className="mt-10 flex justify-center">
+                    <img
+                        src="/logos/vida_logo_black.PNG"
+                        alt="Ministerio Juvenil VIDA"
+                        className="h-16 w-auto object-contain"
+                        loading="lazy"
+                    />
+                </div>
+
+                <footer className="mt-8 text-center text-sm text-ink/60">
+                    <p>
+                        ¿Preguntas o problemas para firmar? Escríbenos a{" "}
+                        <a href={`mailto:${camp.contactEmail}`} className="font-semibold text-oxblood underline underline-offset-2">{camp.contactEmail}</a>.
+                    </p>
                 </footer>
             </div>
         </div>
     );
 }
-
-
