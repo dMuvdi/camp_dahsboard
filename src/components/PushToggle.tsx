@@ -93,7 +93,7 @@ export default function PushToggle() {
                 aria-pressed={on}
                 aria-label={label}
                 title={label}
-                className="flex h-10 w-10 items-center justify-center rounded-lg border border-parchment/40 text-parchment transition-colors hover:bg-parchment/10 disabled:opacity-50"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-parchment transition-colors active:bg-white/20 disabled:opacity-50 md:rounded-lg md:bg-transparent md:border md:border-parchment/40 md:hover:bg-parchment/10"
             >
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill={on ? 'currentColor' : 'none'} stroke="currentColor" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />

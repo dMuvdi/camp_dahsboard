@@ -7,6 +7,8 @@ import { supabase, getAllPeople, User } from '@/lib/supabase'
 import Wordmark from '@/components/Wordmark'
 import PushToggle from '@/components/PushToggle'
 import StaffNav from '@/components/StaffNav'
+import InstallHint from '@/components/InstallHint'
+import { camp } from '@/lib/camp'
 
 interface DashboardStats {
     total: number
@@ -24,6 +26,21 @@ const secondaryBtn = 'inline-flex h-10 items-center justify-center gap-2 rounded
 const iconBtn = 'inline-flex h-10 w-10 md:h-8 md:w-8 items-center justify-center rounded-md text-ink/60 transition-colors hover:bg-ink/5 hover:text-ink disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent'
 const badge = 'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold whitespace-nowrap'
 const toolbarField = 'h-10 rounded-lg border border-ink/15 bg-white px-3 text-sm text-ink placeholder-ink/40 focus:border-vermilion focus:outline-none focus:ring-2 focus:ring-vermilion/25'
+
+function StatCard({ label, value, total, bar }: { label: string; value: number; total: number; bar: string }) {
+    const pct = total ? Math.round((value / total) * 100) : 0
+    return (
+        <div className="rounded-[20px] bg-white p-4 shadow-card md:p-5">
+            <p className="text-sm text-ink/60">{label}</p>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-ink">
+                {value}<span className="text-base font-semibold text-ink/35"> / {total}</span>
+            </p>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/10" role="progressbar" aria-label={label} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+                <div className={`h-full rounded-full ${bar}`} style={{ width: `${pct}%` }} />
+            </div>
+        </div>
+    )
+}
 
 export default function DashboardPage() {
     const [users, setUsers] = useState<User[]>([])
@@ -238,6 +255,27 @@ export default function DashboardPage() {
         // Remove empty filters
         fetchUsers(getActiveFilters(newFilters), { silent: true })
     }
+
+    const handleQuickSearch = (value: string) => {
+        const isId = /^\d+$/.test(value.trim())
+        const newFilters = { ...filters, p_name: isId ? '' : value, p_national_id: isId ? value.trim() : '' }
+        setFilters(newFilters)
+        fetchUsers(getActiveFilters(newFilters), { silent: true })
+    }
+
+    const openAdd = () => {
+        setIsEditing(false)
+        setEditingUser(null)
+        setIsModalOpen(true)
+    }
+
+    // The tab bar's Add button on other screens links here with ?add=1
+    useEffect(() => {
+        if (new URLSearchParams(window.location.search).get('add') === '1') {
+            setIsModalOpen(true)
+            window.history.replaceState(null, '', '/dashboard')
+        }
+    }, [])
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
@@ -723,19 +761,21 @@ export default function DashboardPage() {
     )
 
     return (
-        <div className="min-h-screen">
+        <div className="min-h-screen bg-canvas md:bg-parchment">
             {/* Header */}
-            <header className="bg-oxblood">
+            <header className="bg-oxblood pt-[env(safe-area-inset-top)]">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="flex justify-between items-center h-16 md:h-24">
+                    <div className="flex justify-between items-center h-14 md:h-24">
                         <div className="flex items-center gap-4 md:gap-6">
-                            <Wordmark className="text-vermilion text-xl md:text-2xl" />
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src="/brand/rev-camp-white.png" alt="Revelation Camp" className="h-8 w-auto md:hidden" />
+                            <span className="hidden md:block"><Wordmark className="text-vermilion text-2xl" /></span>
                             <Image
                                 width={240}
                                 height={160}
                                 src="/logos/vida_logo_white.PNG"
                                 alt="Vida Ministerio Juvenil"
-                                className="h-9 md:h-12 w-auto object-contain"
+                                className="hidden md:block h-12 w-auto object-contain"
                             />
                         </div>
 
@@ -744,12 +784,12 @@ export default function DashboardPage() {
                             <button
                                 onClick={handleLogout}
                                 aria-label="Logout"
-                                className="h-10 border border-parchment/40 text-parchment hover:bg-parchment/10 px-2.5 sm:px-4 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
+                                className="h-10 w-10 justify-center rounded-full bg-white/10 text-parchment active:bg-white/20 md:w-auto md:rounded-lg md:bg-transparent md:border md:border-parchment/40 md:px-4 md:hover:bg-parchment/10 text-sm font-semibold transition-colors flex items-center gap-2"
                             >
                                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                                 </svg>
-                                <span className="hidden sm:inline">Logout</span>
+                                <span className="hidden md:inline">Logout</span>
                             </button>
                         </div>
                     </div>
@@ -757,7 +797,8 @@ export default function DashboardPage() {
             </header>
 
             {/* Main Content */}
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-28 md:py-12">
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 pb-36 md:py-12">
+                <InstallHint className="mb-5 md:hidden" />
                 {isConfirmOpen && confirmUser && (
                     <div className="fixed inset-0 z-50">
                         <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsConfirmOpen(false)}></div>
@@ -893,16 +934,16 @@ export default function DashboardPage() {
                     </div>
                 )}
                 {/* Page Header */}
-                <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                <div className="mb-5 flex items-end justify-between gap-4 md:mb-8">
                     <div>
-                        <h1 className="font-display text-2xl md:text-4xl text-oxblood">Camp Participants</h1>
-                        <p className="mt-1 text-ink/70">Manage and track your camp participants</p>
+                        <h1 className="font-display text-[1.75rem] leading-tight md:text-4xl text-oxblood">Participants</h1>
+                        <p className="mt-0.5 text-sm text-ink/60 md:text-base">{stats.total} registered for {camp.name}</p>
                     </div>
                     <div className="flex items-center gap-2">
                         <button
                             type="button"
                             onClick={() => { void fetchUsers(getActiveFilters(), { silent: false }); }}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-ink/15 bg-white text-ink transition-colors hover:bg-ink/5"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-ink shadow-card transition-colors active:bg-ink/5 md:rounded-lg md:shadow-none md:border md:border-ink/15 md:hover:bg-ink/5"
                             aria-label="Refresh list"
                             title="Refresh list"
                         >
@@ -910,7 +951,7 @@ export default function DashboardPage() {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9M20 20v-5h-.581m-15.357-2a8.003 8.003 0 0015.357 2" />
                             </svg>
                         </button>
-                        <button type="button" onClick={() => setIsModalOpen(true)} className={primaryBtn}>
+                        <button type="button" onClick={openAdd} className={`${primaryBtn} max-md:hidden`}>
                             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                             </svg>
@@ -919,9 +960,14 @@ export default function DashboardPage() {
                     </div>
                 </div>
 
-                {/* Participants: status tabs, filters and table in one card */}
-                <div className="bg-white rounded-2xl border border-ink/10 overflow-hidden relative">
-                    <div className="flex gap-1 overflow-x-auto border-b border-ink/10 p-2">
+                <div className="mb-5 grid grid-cols-2 gap-3 md:mb-8 md:gap-4">
+                    <StatCard label="Consents signed" value={stats.signed} total={stats.total} bar="bg-glass" />
+                    <StatCard label="Checked in" value={stats.checkedIn} total={stats.total} bar="bg-oxblood" />
+                </div>
+
+                {/* Participants: status pills, filters and list (cards on phones, one table card from md) */}
+                <div className="relative md:overflow-hidden md:rounded-2xl md:border md:border-ink/10 md:bg-white">
+                    <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:border-b md:border-ink/10 md:p-2">
                         {statusTabs.map((tab) => {
                             const active = isTabActive(tab.patch)
                             return (
@@ -930,15 +976,30 @@ export default function DashboardPage() {
                                     type="button"
                                     aria-pressed={active}
                                     onClick={() => handleStatusTab(tab.patch)}
-                                    className={`inline-flex items-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors ${active ? 'bg-ink/5 text-ink' : 'text-ink/60 hover:text-ink'}`}
+                                    className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition-colors ${active ? 'bg-oxblood text-parchment' : 'bg-white text-ink/70 shadow-card md:shadow-none md:hover:bg-ink/5'}`}
                                 >
-                                    {tab.dot && <span className={`h-2 w-2 rounded-full ${tab.dot}`} aria-hidden="true" />}
+                                    {tab.dot && !active && <span className={`h-2 w-2 rounded-full ${tab.dot}`} aria-hidden="true" />}
                                     {tab.label} <span className="tabular-nums">({tab.count})</span>
                                 </button>
                             )
                         })}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 border-b border-ink/10 px-4 py-3">
+                    <div className="relative mt-3 md:hidden">
+                        <label htmlFor="quick-search" className="sr-only">Search by name or C.C.</label>
+                        <svg className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-ink/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z" />
+                        </svg>
+                        <input
+                            id="quick-search"
+                            type="search"
+                            placeholder="Search name or C.C."
+                            autoComplete="off"
+                            value={filters.p_national_id || filters.p_name}
+                            onChange={(e) => handleQuickSearch(e.target.value)}
+                            className="h-12 w-full rounded-full bg-white pl-12 pr-4 text-base text-ink shadow-card placeholder-ink/40 focus:outline-none focus:ring-2 focus:ring-oxblood/30"
+                        />
+                    </div>
+                    <div className="hidden flex-wrap items-center gap-2 border-b border-ink/10 px-4 py-3 md:flex">
                         <label htmlFor="filter-name" className="sr-only">Name</label>
                         <input
                             id="filter-name"
@@ -994,7 +1055,7 @@ export default function DashboardPage() {
                         </button>
                     </div>
                     {emailStatus && (
-                        <div className={`fixed bottom-24 right-4 md:bottom-6 md:right-6 z-50 px-6 py-4 rounded-lg border-2 transform transition-colors ease-out ${emailStatus.type === 'success'
+                        <div className={`fixed bottom-32 inset-x-4 md:inset-x-auto md:bottom-6 md:right-6 z-50 px-6 py-4 rounded-lg border-2 transform transition-colors ease-out ${emailStatus.type === 'success'
                             ? 'bg-white border-glass/40 text-glass'
                             : emailStatus.type === 'error'
                                 ? 'bg-white border-vermilion/50 text-oxblood'
@@ -1107,7 +1168,7 @@ export default function DashboardPage() {
                                                             {user.names} {user.last_name_1} {user.last_name_2}
                                                         </div>
                                                         <div className="mt-0.5 flex gap-3 whitespace-nowrap text-xs text-ink/60">
-                                                            <span className="tabular-nums">C.C. {user.national_id}</span>
+                                                            <span className="tabular-nums">{Number(user.age) < 18 ? 'T.I.' : 'C.C.'} {user.national_id}</span>
                                                             <span>{user.age} years</span>
                                                             <span>{user.gender}</span>
                                                         </div>
@@ -1156,19 +1217,19 @@ export default function DashboardPage() {
                             </table>
                             </div>
 
-                            <ul className="divide-y divide-ink/10 md:hidden">
+                            <ul className="mt-4 space-y-3 md:hidden">
                                 {filteredUsers.map((user: User) => (
-                                    <li key={user.id} className="px-4 py-4">
+                                    <li key={user.id} className="rounded-[20px] bg-white p-4 shadow-card">
                                         <div className="flex items-start gap-3">
                                             <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-oxblood/10 text-sm font-semibold text-oxblood" aria-hidden="true">
                                                 {user.names.charAt(0)}{user.last_name_1?.charAt(0)}
                                             </span>
-                                            <button type="button" onClick={() => openEdit(user)} className="min-w-0 flex-1 text-left">
+                                            <button type="button" onClick={() => openEdit(user)} className="min-w-0 flex-1 rounded-xl text-left active:opacity-70">
                                                 <span className="block font-semibold text-ink">
                                                     {user.names} {user.last_name_1} {user.last_name_2}
                                                 </span>
                                                 <span className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-ink/60">
-                                                    <span className="tabular-nums">C.C. {user.national_id}</span>
+                                                    <span className="tabular-nums">{Number(user.age) < 18 ? 'T.I.' : 'C.C.'} {user.national_id}</span>
                                                     <span>{user.age} years</span>
                                                     {user.manager_id && <span>Manager: {managerNames[user.manager_id] || '...'}</span>}
                                                 </span>
@@ -1182,14 +1243,16 @@ export default function DashboardPage() {
                                                 </span>
                                             </button>
                                         </div>
-                                        <div className="mt-2 flex items-center justify-between pl-13">
-                                            <label className="flex items-center gap-2 text-sm text-ink/70">
+                                        <div className="mt-3 flex items-center justify-between border-t border-ink/5 pt-3">
+                                            <label className={`flex items-center gap-2.5 text-sm text-ink/70 ${user.checked_in ? '' : 'opacity-40'}`}>
+                                                {/* switch: native checkbox restyled like the iOS/Android toggle */}
                                                 <input
                                                     type="checkbox"
+                                                    role="switch"
                                                     checked={user.checked_out}
                                                     onChange={(e) => handleCheckOutUpdate(user, e.target.checked)}
                                                     disabled={!user.checked_in}
-                                                    className="h-5 w-5 accent-glass disabled:opacity-40"
+                                                    className="relative h-7 w-12 flex-none cursor-pointer appearance-none rounded-full bg-ink/15 transition-colors before:absolute before:left-0.5 before:top-0.5 before:h-6 before:w-6 before:rounded-full before:bg-white before:shadow before:transition-transform checked:bg-glass checked:before:translate-x-5 disabled:cursor-not-allowed"
                                                 />
                                                 Checked out
                                             </label>
@@ -1213,12 +1276,13 @@ export default function DashboardPage() {
                 </div>
             </main>
 
-            <StaffNav />
+            <StaffNav onAdd={openAdd} />
 
             {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 sm:px-6 lg:px-8 backdrop-blur-sm overflow-y-auto bg-ink/60">
-                    <div className="w-full max-w-4xl bg-white rounded-2xl border-2 border-ink/10 overflow-hidden transform transition-colors scale-100 my-8">
-                        <div className="flex items-center justify-between px-6 py-4 border-b-2 border-ink/10 sticky top-0 bg-white z-10">
+                <div className="fixed inset-0 z-50 flex items-end justify-center backdrop-blur-sm bg-ink/60 md:items-center md:overflow-y-auto md:px-6 md:py-6">
+                    <div className="w-full max-w-4xl max-h-[calc(100dvh-env(safe-area-inset-top)-0.5rem)] overflow-y-auto overscroll-contain bg-white rounded-t-[28px] pb-[env(safe-area-inset-bottom)] animate-[sheetUp_0.25s_ease-out] md:max-h-none md:overflow-hidden md:rounded-2xl md:border-2 md:border-ink/10 md:my-8 md:pb-0 md:animate-none">
+                        <div className="sticky top-0 z-20 flex justify-center bg-white pt-2 md:hidden" aria-hidden="true"><span className="h-1.5 w-10 rounded-full bg-ink/15" /></div>
+                        <div className="flex items-center justify-between px-5 py-4 md:px-6 border-b-2 border-ink/10 sticky top-3.5 md:top-0 bg-white z-10">
                             <div className="flex items-center space-x-4">
                                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-oxblood">
                                     <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1443,13 +1507,13 @@ export default function DashboardPage() {
                                     </div>
                                 </div>
 
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-4 pt-6 border-t-2 border-ink/10 sticky bottom-0 bg-white z-10">
+                                <div className="grid grid-cols-2 gap-3 pt-4 pb-3 sm:flex sm:flex-row sm:items-center sm:justify-end sm:gap-4 sm:pt-6 sm:pb-0 border-t-2 border-ink/10 sticky bottom-0 bg-white z-10">
                                     {isEditing && (
                                         <button
                                             type="button"
                                             onClick={() => setIsDeleteConfirmOpen(true)}
                                             disabled={isSubmitting || isDeleting}
-                                            className="w-full sm:w-auto px-8 py-4 rounded-lg text-sm font-bold text-oxblood bg-white border-2 border-vermilion hover:bg-vermilion/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                            className="col-span-2 order-last w-full sm:order-none sm:w-auto px-8 py-2 sm:py-4 rounded-lg text-sm font-bold text-oxblood bg-white sm:border-2 sm:border-vermilion hover:bg-vermilion/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                                         >
                                             {isDeleting ? 'Deleting...' : 'Delete Participant'}
                                         </button>
@@ -1457,14 +1521,14 @@ export default function DashboardPage() {
                                     <button
                                         type="button"
                                         onClick={closeModal}
-                                        className="w-full sm:w-auto px-8 py-4 rounded-lg text-sm font-bold text-ink/80 bg-ink/5 hover:bg-ink/10 transition-colors"
+                                        className="w-full sm:w-auto px-4 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-lg text-sm font-bold text-ink/80 bg-ink/5 hover:bg-ink/10 transition-colors"
                                     >
                                         Cancel
                                     </button>
                                     <button
                                         type="submit"
                                         disabled={isSubmitting || isDeleting}
-                                        className="w-full sm:w-auto px-8 py-4 rounded-lg text-sm font-bold text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center space-x-2 bg-oxblood hover:bg-oxblood/90"
+                                        className="w-full sm:w-auto px-4 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-lg text-sm font-bold text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center space-x-2 bg-oxblood hover:bg-oxblood/90"
                                     >
                                         {isSubmitting ? (
                                             <>
@@ -1489,7 +1553,7 @@ export default function DashboardPage() {
 
             {copyStatus && (
                 <div
-                    className={`fixed ${emailStatus ? 'bottom-44 md:bottom-24' : 'bottom-24 md:bottom-6'} right-4 md:right-6 z-[70] px-5 py-3 rounded-lg border border-glass/40 bg-white flex items-center gap-3 transition-all duration-300 ease-in-out ${isCopyToastVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-2 scale-95 pointer-events-none'}`}
+                    className={`fixed ${emailStatus ? 'bottom-52 md:bottom-24' : 'bottom-32 md:bottom-6'} inset-x-4 md:inset-x-auto md:right-6 z-[70] px-5 py-3 rounded-lg border border-glass/40 bg-white flex items-center gap-3 transition-all duration-300 ease-in-out ${isCopyToastVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-2 scale-95 pointer-events-none'}`}
                 >
                     <div className="flex-shrink-0 w-8 h-8 bg-glass rounded-full flex items-center justify-center">
                         <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">

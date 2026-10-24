@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Image from 'next/image'
 import Link from 'next/link'
 import Wordmark from '@/components/Wordmark'
 import { camp } from '@/lib/camp'
@@ -24,6 +25,13 @@ const checklist = [
     'Llegar con anticipación',
 ]
 
+// Moodboard photos from the Canva brand guide, paired with what campers will actually do
+const moments = [
+    { photo: '/brand/photos/hands.jpg', title: 'Adoración', text: 'Culto y oración en comunidad.' },
+    { photo: '/brand/photos/cathedral.jpg', title: 'La Palabra', text: 'Enseñanza bíblica para ver a Jesús con claridad.' },
+    { photo: '/brand/photos/golden-wave.jpg', title: 'El mar', text: 'Tres días en la Isla de Bocachica, frente al Caribe.' },
+]
+
 const steps = [
     { title: 'Inscríbete', text: 'Reserva tu cupo con el equipo del Ministerio Juvenil VIDA.' },
     { title: 'Firma el consentimiento', text: 'Te llega un enlace por correo para leerlo y firmarlo desde el celular o el computador.' },
@@ -35,10 +43,9 @@ export default function Home() {
     return (
         <>
             <header className="relative overflow-hidden bg-oxblood text-parchment">
-                <LineArt
-                    src="/brand/window-sun.png"
-                    className="absolute left-1/2 top-1/2 h-[92%] aspect-[580/850] -translate-x-1/2 -translate-y-1/2 bg-vermilion/25"
-                />
+                {/* low-res moodboard photo used as light, not detail: soft and tinted under the wordmark */}
+                <Image src="/brand/photos/cathedral.jpg" alt="" fill priority sizes="100vw" className="object-cover opacity-60 blur-[1px] scale-105" />
+                <div className="absolute inset-0 bg-gradient-to-b from-oxblood/40 via-oxblood/60 to-oxblood" aria-hidden="true" />
                 <div className="relative mx-auto flex min-h-[100svh] max-w-5xl flex-col items-center justify-center px-6 py-20 text-center">
                     <Wordmark className="text-[2rem] sm:text-6xl lg:text-7xl" />
                     <p className="mt-8 font-display text-lg tracking-[0.2em] sm:text-xl">to see HIM clearly</p>
@@ -65,6 +72,27 @@ export default function Home() {
                         </p>
                     </div>
                 </section>
+
+                <section aria-labelledby="vivir" className="pb-20 sm:pb-28">
+                    <h2 id="vivir" className="mx-auto max-w-5xl px-6 font-display text-3xl text-oxblood">Lo que vamos a vivir</h2>
+                    {/* phones: swipeable row with the next card peeking; desktop: three columns */}
+                    <ul className="mt-8 flex snap-x snap-mandatory gap-4 overflow-x-auto px-6 pb-2 [scrollbar-width:none] sm:mx-auto sm:grid sm:max-w-5xl sm:grid-cols-3 sm:overflow-visible">
+                        {moments.map((m) => (
+                            <li key={m.title} className="relative aspect-[3/4] w-[78%] flex-none snap-center overflow-hidden rounded-3xl bg-oxblood sm:w-auto">
+                                <Image src={m.photo} alt="" fill sizes="(min-width: 640px) 33vw, 78vw" className="object-cover" />
+                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-5 pt-16 text-parchment">
+                                    <h3 className="font-display text-2xl">{m.title}</h3>
+                                    <p className="mt-1 text-sm leading-relaxed text-parchment/85">{m.text}</p>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+
+                {/* the source photo is ~470px wide, so it stays at a size it can fill sharply */}
+                <figure className="relative mx-auto aspect-[3/2] w-full max-w-xl sm:mb-20 sm:overflow-hidden sm:rounded-3xl">
+                    <Image src="/brand/photos/worship.jpg" alt="Jóvenes cantando con una guitarra en un tiempo de adoración" fill sizes="(min-width: 640px) 576px, 100vw" className="object-cover" />
+                </figure>
 
                 <section aria-labelledby="viaje" className="bg-ink px-6 py-20 sm:py-28">
                     <div className="mx-auto max-w-md">
