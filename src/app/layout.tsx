@@ -29,6 +29,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#4f0100",
+  // lets the installed app draw under the iPhone status bar; headers pad with env(safe-area-inset-top)
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

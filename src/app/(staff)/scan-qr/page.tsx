@@ -187,9 +187,11 @@ export default function ScanQrPage() {
                     }
                 `
             }} />
-            <header className="bg-oxblood">
-                <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-                    <Wordmark className="text-vermilion text-xl" />
+            <header className="bg-oxblood pt-[env(safe-area-inset-top)]">
+                <div className="mx-auto flex h-14 md:h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/brand/rev-camp-white.png" alt="Revelation Camp" className="h-8 w-auto md:hidden" />
+                    <span className="hidden md:block"><Wordmark className="text-vermilion text-xl" /></span>
                     <Link href="/dashboard" className="hidden items-center gap-1.5 rounded-lg border border-parchment/40 px-4 py-2 text-sm font-semibold text-parchment hover:bg-parchment/10 md:inline-flex">
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -198,15 +200,19 @@ export default function ScanQrPage() {
                     </Link>
                 </div>
             </header>
-            <div className="flex min-h-[calc(100svh-4rem)] flex-col items-center justify-center p-4 pb-24 md:pb-4">
-                <h1 className="font-display text-2xl text-oxblood mb-4">Scan to check in</h1>
+            {/* phones get a dark, full-bleed camera screen like a native scanner */}
+            <div className="flex min-h-[calc(100dvh-3.5rem-env(safe-area-inset-top))] flex-col items-center justify-center bg-ink p-4 pb-36 md:min-h-[calc(100svh-4rem)] md:bg-parchment md:pb-4">
+                <h1 className="font-display text-2xl text-parchment md:text-oxblood mb-4">Scan to check in</h1>
                 {!secureContext && (
                     <p className="mb-3 text-sm text-oxblood">Camera requires HTTPS. Please use a secure URL or localhost.</p>
                 )}
                 {!supported && (
                     <p className="mb-3 text-sm text-oxblood">Camera API not supported on this device/browser.</p>
                 )}
-                <div className="w-full max-w-md rounded-2xl overflow-hidden border-4 border-oxblood bg-black aspect-[3/4]">
+                <div className="relative w-full max-w-md rounded-[28px] overflow-hidden ring-1 ring-white/10 bg-black aspect-[3/4] md:rounded-2xl md:ring-0 md:border-4 md:border-oxblood">
+                    <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center" aria-hidden="true">
+                        <div className="h-[58%] aspect-square rounded-3xl border-2 border-white/70 shadow-[0_0_0_9999px_rgb(0_0_0/0.25)]" />
+                    </div>
                     <video
                         ref={videoRef}
                         className="w-full h-full object-cover"
@@ -220,9 +226,9 @@ export default function ScanQrPage() {
                     ></video>
                 </div>
                 {/* auto-start camera; no manual button */}
-                {status && <p className="mt-4 text-sm text-ink/80">{status}</p>}
+                {status && <p className="mt-4 text-sm text-parchment/80 md:text-ink/80">{status}</p>}
                 {error && (
-                    <p className="mt-2 text-sm text-oxblood">{error}</p>
+                    <p className="mt-2 text-sm font-semibold text-parchment md:text-oxblood">{error}</p>
                 )}
 
                 {/* Already Checked In Dialog */}

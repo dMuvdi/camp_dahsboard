@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import Link from 'next/link'
 import Wordmark from '@/components/Wordmark'
 
 export default function LoginPage() {
@@ -37,13 +38,20 @@ export default function LoginPage() {
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-5xl w-full">
-                <div className="bg-white rounded-2xl border border-ink/10 overflow-hidden flex flex-col lg:flex-row">
+        <div className="min-h-[100dvh] flex flex-col bg-oxblood lg:items-center lg:justify-center lg:bg-parchment lg:py-12 lg:px-8">
+            {/* phones: brand on the oxblood top, form in a sheet like a native sign-in */}
+            <div className="flex flex-col items-center gap-4 px-6 pb-10 pt-[calc(env(safe-area-inset-top)+3.5rem)] lg:hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/brand/rev-camp-white.png" alt="Revelation Camp" className="h-20 w-auto" />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/logos/vida_logo_white.PNG" alt="Ministerio Juvenil VIDA" className="h-8 w-auto opacity-80" />
+            </div>
+            <div className="max-w-5xl w-full flex-1 flex flex-col lg:flex-none">
+                <div className="flex-1 bg-white rounded-t-[28px] overflow-hidden flex flex-col lg:flex-none lg:flex-row lg:rounded-2xl lg:border lg:border-ink/10">
                     {/* Left Section - Login Form */}
-                    <div className="w-full lg:w-1/2 p-8 lg:p-12 flex items-center">
+                    <div className="w-full lg:w-1/2 px-6 pt-8 pb-[calc(env(safe-area-inset-bottom)+2rem)] lg:p-12 flex lg:items-center">
                         <div className="w-full max-w-sm mx-auto">
-                            <div className="flex items-center justify-between mb-10">
+                            <div className="hidden lg:flex items-center justify-between mb-10">
                                 <Wordmark className="lg:hidden text-vermilion text-lg" />
                                 <Image
                                     src="/logos/vida_logo_black.PNG"
@@ -106,6 +114,12 @@ export default function LoginPage() {
                                     {loading ? 'Signing in...' : 'Sign in'}
                                 </button>
                             </form>
+                            <p className="mt-8 text-center text-sm text-ink/60">
+                                ¿Usas el celular?{' '}
+                                <Link href="/instalar" className="font-semibold text-oxblood underline underline-offset-2">
+                                    Instala la app
+                                </Link>
+                            </p>
                         </div>
                     </div>
 

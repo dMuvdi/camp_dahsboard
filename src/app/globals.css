@@ -7,6 +7,9 @@
   --color-parchment: #f3edd8;
   --color-glass: #016d32;
   --color-ink: #142840;
+  /* staff app canvas: a lighter, less yellow parchment so white cards read on it */
+  --color-canvas: #f7f4ee;
+  --shadow-card: 0 1px 2px rgb(20 40 64 / 0.05), 0 10px 24px -14px rgb(20 40 64 / 0.22);
 }
 
 @theme inline {
@@ -18,6 +21,19 @@
 body {
   background: var(--color-parchment);
   color: var(--color-ink);
+}
+
+/* Native-app feel on phones: no grey tap flash, no double-tap zoom delay */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+a,
+button,
+label,
+select,
+input {
+  touch-action: manipulation;
 }
 
 :focus-visible {
@@ -83,5 +99,15 @@ body {
   60%,
   80% {
     transform: translateX(5px);
+  }
+}
+/* bottom sheets slide up like native ones (reduced-motion rule above shortens it) */
+@keyframes sheetUp {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
   }
 }
