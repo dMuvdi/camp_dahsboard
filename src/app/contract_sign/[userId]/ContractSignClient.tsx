@@ -133,6 +133,7 @@ export default function ContractSignClient({
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitStatus, setSubmitStatus] = useState<"idle" | "success" | "success_minor_1" | "success_minor_2" | "error">("idle");
     const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+    const [delegateLink, setDelegateLink] = useState<string | null>(null);
     const [guardianSelection, setGuardianSelection] = useState<"parent" | "delegate" | null>(null);
     const [guardianName, setGuardianName] = useState("");
     const [guardianNationalId, setGuardianNationalId] = useState("");
@@ -328,27 +329,17 @@ export default function ContractSignClient({
         return new File([blob], "signature.png", { type: "image/png" });
     };
 
-    // Supabase Edge Function call, authenticated with the anon key
-    const callFunction = (slug: string, body: FormData) => {
-        const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-        return fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/${slug}`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${anonKey}`, apikey: anonKey },
-            body,
-        });
-    };
-
-    // Marks the participant as signed, emails the boarding pass and tells staff (server side)
-    const markSignedAndSendTicket = async () => {
-        const response = await fetch('/api/consent-signed', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ personId: participant.id }),
-        });
+    // Server signs, stores the PDF, marks the person signed, emails the boarding pass and tells staff (api/consent)
+    const postConsent = async (fields: Record<string, string>, signatureFile: File) => {
+        const form = new FormData();
+        Object.entries(fields).forEach(([key, value]) => form.append(key, value));
+        form.append("signature", signatureFile);
+        const response = await fetch("/api/consent", { method: "POST", body: form });
         if (!response.ok) {
-            // Not fatal for the signer: the PDF exists and staff can resend the ticket
-            console.error('Failed to register the signature:', await response.text());
+            const { error } = await response.json().catch(() => ({ error: null }));
+            throw new Error(error || "No se pudo registrar la firma. Intenta de nuevo.");
         }
+        return response;
     };
 
     const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -381,53 +372,29 @@ export default function ContractSignClient({
             const signatureFile = await getSignatureFile();
 
             if (isMinor && guardianSelection === "parent" && guardianLookup.status === "found") {
-                const formData = new FormData();
-                formData.append("signature_file", signatureFile);
-                formData.append("minor_id", participant.id);
-                formData.append("manager_id", guardianLookup.person.id);
-
-                const response = await callFunction("create-minor-consent-pdf", formData);
-                if (!response.ok) {
-                    const text = await response.text();
-                    throw new Error(text || "No se pudo generar el PDF para menor");
-                }
-
+                const response = await postConsent({ kind: "minor", minor_id: participant.id, manager_id: guardianLookup.person.id }, signatureFile);
                 setPdfUrl(URL.createObjectURL(await response.blob()));
-                await markSignedAndSendTicket();
                 setSubmitStatus("success_minor_1");
                 window.scrollTo({ top: 0, behavior: 'smooth' });
 
             } else if (isMinor && guardianSelection === "delegate" && delegateLookup.status === "found") {
-                const formData = new FormData();
-                formData.append("signature_file", signatureFile);
-                formData.append("minor_id", participant.id);
-                formData.append("manager_id", delegateLookup.person.id);
-                formData.append("tutor_name", guardianName.trim());
-                formData.append("tutor_national_id", guardianNationalId.trim());
-
-                const response = await callFunction("minor-second-option-manager-assignment", formData);
-                if (!response.ok) {
-                    const text = await response.text();
-                    throw new Error(text || "No se pudo generar el PDF para menor");
-                }
-
+                const response = await postConsent({
+                    kind: "delegate-request",
+                    minor_id: participant.id,
+                    manager_id: delegateLookup.person.id,
+                    tutor_name: guardianName.trim(),
+                    tutor_national_id: guardianNationalId.trim(),
+                }, signatureFile);
+                const { delegateNotified, link } = await response.json();
+                // the email to the manager failed: the parent shares the link instead
+                setDelegateLink(delegateNotified ? null : link);
                 setSubmitStatus("success_minor_2");
                 window.scrollTo({ top: 0, behavior: 'smooth' });
 
             } else if (!isMinor) {
-                const formData = new FormData();
-                formData.append("person_id", participant.id);
-                formData.append("signature", signatureFile);
-
-                const response = await callFunction("create-consent-pdf", formData);
-                if (!response.ok) {
-                    const text = await response.text();
-                    throw new Error(text || "No se pudo generar el PDF");
-                }
-
+                const response = await postConsent({ kind: "adult", person_id: participant.id }, signatureFile);
                 const url = URL.createObjectURL(await response.blob());
                 setPdfUrl(url);
-                await markSignedAndSendTicket();
                 setSubmitStatus("success");
                 window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -513,10 +480,20 @@ export default function ContractSignClient({
                         <div className="border-t border-ink/10 px-5 py-10 sm:px-8 text-center">
                             {successIcon}
                             <h2 className="mt-6 text-2xl font-bold text-glass">Autorización firmada</h2>
-                            <p className="mt-2 text-ink/80">
-                                Enviamos un correo a {delegateLookup.status === "found" ? fullName(delegateLookup.person) : "el responsable"} para
-                                que también firme. Cuando lo haga, {minorFirstName} recibirá su QR de acceso.
-                            </p>
+                            {delegateLink ? (
+                                <>
+                                    <p className="mt-2 text-ink/80">
+                                        No pudimos enviarle el correo a {delegateLookup.status === "found" ? fullName(delegateLookup.person) : "el responsable"}.
+                                        Compártele este enlace para que firme; cuando lo haga, {minorFirstName} recibirá su QR de acceso.
+                                    </p>
+                                    <p className="mt-4 break-all rounded-xl bg-parchment/60 px-4 py-3 text-left text-sm font-semibold text-ink">{delegateLink}</p>
+                                </>
+                            ) : (
+                                <p className="mt-2 text-ink/80">
+                                    Enviamos un correo a {delegateLookup.status === "found" ? fullName(delegateLookup.person) : "el responsable"} para
+                                    que también firme. Cuando lo haga, {minorFirstName} recibirá su QR de acceso.
+                                </p>
+                            )}
                         </div>
                     )}
 

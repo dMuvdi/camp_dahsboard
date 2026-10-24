@@ -235,36 +235,17 @@ export default function DelegateSignClient({
                 }, "image/png", 1);
             });
 
-            // Build FormData for minor consent PDF Edge Function
-            const consentFormData = new FormData();
-            consentFormData.append("signature_file", new File([signatureBlob], "signature.png", { type: "image/png" }));
-            consentFormData.append("minor_id", minor.id);
-
-            // Call Supabase Edge Function to create minor consent PDF
-            const consentFunctionsUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/create-minor-second-option-consent-pdf`;
-            const consentResponse = await fetch(consentFunctionsUrl, {
-                method: "POST",
-                headers: {
-                    'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-                    'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-                },
-                body: consentFormData,
-            });
-
-            if (!consentResponse.ok) {
-                const text = await consentResponse.text();
-                throw new Error(text || "No se pudo generar el PDF de consentimiento para menor");
+            // Server builds the PDF with the parent's and this signature, marks the minor signed and emails the QR (api/consent)
+            const form = new FormData();
+            form.append("kind", "delegate");
+            form.append("minor_id", minor.id);
+            form.append("signature", new File([signatureBlob], "signature.png", { type: "image/png" }));
+            const response = await fetch("/api/consent", { method: "POST", body: form });
+            if (!response.ok) {
+                const { error } = await response.json().catch(() => ({ error: null }));
+                throw new Error(error || "No se pudo registrar la firma. Intenta de nuevo.");
             }
-
-            // Marks the minor as signed, emails the boarding pass and tells staff (server side)
-            const signedResponse = await fetch('/api/consent-signed', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ personId: minor.id }),
-            });
-            if (!signedResponse.ok) {
-                console.error('Failed to register the signature:', await signedResponse.text());
-            }
+            setPdfUrl(URL.createObjectURL(await response.blob()));
 
             setSubmitStatus("success");
 
