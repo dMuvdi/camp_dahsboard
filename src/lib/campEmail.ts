@@ -118,9 +118,11 @@ function generateTicketEmail(fullName: string): string {
     return shell(`Pase de abordaje - ${camp.name}`, `Tu pase de abordaje para ${camp.name}: ${camp.boardingDay}, ${camp.boardingTime}.`, body);
 }
 
-function generateContractSigningEmail(fullName: string, contractUrl?: string): string {
+// minorName set: the email goes to the adult a parent named as the minor's manager
+function generateContractSigningEmail(fullName: string, contractUrl?: string, minorName?: string): string {
     const name = escapeHtml(fullName);
     const url = contractUrl ?? "";
+    const minor = minorName ? escapeHtml(minorName) : "";
     const step = (n: number, text: string) =>
         `<tr><td valign="top" style="padding:6px 12px 6px 0;"><div style="width:24px;height:24px;line-height:24px;border-radius:12px;background:${c.parchment};color:${c.oxblood};font-family:${sans};font-size:12px;font-weight:700;text-align:center;">${n}</div></td><td style="padding:8px 0 6px;font-family:${sans};font-size:14px;line-height:20px;color:${c.ink};">${text}</td></tr>`;
 
@@ -132,20 +134,25 @@ function generateContractSigningEmail(fullName: string, contractUrl?: string): s
       <div style="font-size:14px;color:${c.muted};">Hola,</div>
       <div style="font-size:18px;font-weight:700;color:${c.ink};margin:2px 0 14px;">${name}</div>
       <div style="font-size:15px;line-height:23px;color:${c.ink};">
-        Para participar en ${camp.name} (${camp.dates}) necesitamos tu consentimiento informado firmado.
-        Cuando lo firmes te enviaremos tu código QR de acceso.
+        ${minor
+            ? `El padre, madre o tutor(a) de <strong>${minor}</strong> te autorizó como su responsable durante ${camp.name} (${camp.dates}). Lee la autorización y fírmala para completar su inscripción.`
+            : `Para participar en ${camp.name} (${camp.dates}) necesitamos tu consentimiento informado firmado. Cuando lo firmes te enviaremos tu código QR de acceso.`}
       </div>
     </td></tr>
     <tr><td align="center" class="px" style="padding:22px 28px 24px;">
-      <a href="${url}" style="display:inline-block;background:${c.oxblood};color:#ffffff;font-family:${sans};font-size:15px;font-weight:700;text-decoration:none;padding:15px 34px;border-radius:14px;">Firmar consentimiento</a>
+      <a href="${url}" style="display:inline-block;background:${c.oxblood};color:#ffffff;font-family:${sans};font-size:15px;font-weight:700;text-decoration:none;padding:15px 34px;border-radius:14px;">${minor ? "Firmar autorización" : "Firmar consentimiento"}</a>
     </td></tr>
     ${perforation}
     <tr><td class="px" style="padding:12px 28px 26px;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-        ${step(1, "Toca el botón y lee el documento con calma.")}
+        ${minor
+            ? `${step(1, "Toca el botón y lee la autorización con calma.")}
+        ${step(2, "Firma con el dedo o el mouse y envíala.")}
+        ${step(3, `${minor} recibirá su pase de abordaje con el código QR.`)}`
+            : `${step(1, "Toca el botón y lee el documento con calma.")}
         ${step(2, "Si el campista es menor de edad, lo firma su padre, madre o tutor(a).")}
         ${step(3, "Firma con el dedo o el mouse y envíalo.")}
-        ${step(4, "Recibirás tu pase de abordaje con el código QR en este correo.")}
+        ${step(4, "Recibirás tu pase de abordaje con el código QR en este correo.")}`}
       </table>
     </td></tr>
   </table>
@@ -162,6 +169,8 @@ export interface CampEmail {
     // site origin, used for the signing link and to fetch the logos
     origin: string;
     contractUrl?: string;
+    // contract emails for a minor's appointed manager: the minor's full name
+    minorName?: string;
 }
 
 // Images embedded by CID; fetched from the site because Vercel functions don't ship /public
@@ -171,7 +180,7 @@ const assets: Record<CampEmail["emailType"], [file: string, cid: string][]> = {
 };
 
 // Throws when SMTP is not configured or the message can't be sent
-export async function sendCampEmail({ emailType, to, fullName, userId, origin, contractUrl }: CampEmail) {
+export async function sendCampEmail({ emailType, to, fullName, userId, origin, contractUrl, minorName }: CampEmail) {
     try {
         const host = process.env.SMTP_HOST;
         const port = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : 587;
@@ -199,7 +208,7 @@ export async function sendCampEmail({ emailType, to, fullName, userId, origin, c
         }
 
         const html = emailType === "contract"
-            ? generateContractSigningEmail(fullName, contractUrl)
+            ? generateContractSigningEmail(fullName, contractUrl, minorName)
             : generateTicketEmail(fullName);
 
         const baseUrl = origin || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
@@ -229,7 +238,9 @@ export async function sendCampEmail({ emailType, to, fullName, userId, origin, c
         await transporter.sendMail({
             from,
             to,
-            subject: emailType === "contract" ? `Firma de Consentimiento - ${camp.name}` : `Tu pase de abordaje - ${camp.name}`,
+            subject: emailType === "contract"
+                ? (minorName ? `Autorización como responsable de ${minorName} - ${camp.name}` : `Firma de Consentimiento - ${camp.name}`)
+                : `Tu pase de abordaje - ${camp.name}`,
             html,
             text: emailType === "contract"
                 ? `Hola ${fullName}, este es el link para firmar tu consentimiento: ${contractUrl}`
