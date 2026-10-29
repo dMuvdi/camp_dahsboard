@@ -1,0 +1,8 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.58.0",
+    "nodemailer": "npm:nodemailer@10.2.1",
+    "pdf-lib": "npm:pdf-lib@1.17.1",
+    "qrcode": "npm:qrcode@1.5.4"
+  }
+}

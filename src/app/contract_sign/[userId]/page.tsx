@@ -1,29 +1,8 @@
 import { notFound } from "next/navigation";
-import type { User } from "@/lib/supabase";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getSigningPerson } from "@/lib/consentApi";
 import ContractSignClient from "@/app/contract_sign/[userId]/ContractSignClient";
 
 export const dynamic = "force-dynamic";
-
-async function fetchParticipant(userId: string): Promise<User | null> {
-    if (!userId) {
-        return null;
-    }
-
-    // Signers aren't logged in, so the page reads its one row on the server
-    const { data, error } = await supabaseAdmin()
-        .from("People")
-        .select("*")
-        .eq("id", userId)
-        .single();
-
-    if (error || !data) {
-        console.error("Failed to fetch participant", error);
-        return null;
-    }
-
-    return data as User;
-}
 
 export default async function ContractSignPage({
     params,
@@ -31,14 +10,12 @@ export default async function ContractSignPage({
     params: Promise<{ userId: string }>;
 }) {
     const { userId } = await params;
-    const decodedUserId = decodeURIComponent(userId);
-    const participant = await fetchParticipant(decodedUserId);
+    // Signers aren't logged in: the consent Edge Function reads the participant
+    const data = await getSigningPerson(decodeURIComponent(userId));
 
-    if (!participant) {
+    if (!data) {
         notFound();
     }
 
-    return <ContractSignClient participant={participant} />;
+    return <ContractSignClient participant={data.person} />;
 }
-
-

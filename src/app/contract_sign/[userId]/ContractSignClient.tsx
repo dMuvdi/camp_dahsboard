@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@/lib/supabase";
 import { camp } from "@/lib/camp";
+import { consentFunctionUrl, consentHeaders } from "@/lib/consentApi";
 import Wordmark from "@/components/Wordmark";
 import { AdultConsent, MinorConsent, consentTitle, fullName } from "@/components/ConsentDocument";
 
@@ -16,7 +17,7 @@ interface SignatureState {
     strokes: Path2D[];
 }
 
-// What /api/camper-lookup returns for a registered camper
+// What the consent function's lookup returns for a registered camper
 type Camper = Pick<User, "id" | "names" | "last_name_1" | "last_name_2" | "age">;
 
 type Lookup =
@@ -29,10 +30,10 @@ const labelClass = "mb-1.5 block text-sm font-semibold text-ink";
 
 // Exact C.C. match, checked on the server (signers have no access to the participants table)
 async function findPerson(nationalId: string): Promise<Camper | null> {
-    const response = await fetch("/api/camper-lookup", {
+    const response = await fetch(consentFunctionUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nationalId }),
+        headers: { ...consentHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "lookup", nationalId }),
     });
     if (response.status === 404) return null;
     if (!response.ok) throw new Error(`Lookup failed: ${response.status}`);
@@ -329,12 +330,12 @@ export default function ContractSignClient({
         return new File([blob], "signature.png", { type: "image/png" });
     };
 
-    // Server signs, stores the PDF, marks the person signed, emails the boarding pass and tells staff (api/consent)
+    // The consent Edge Function signs, stores the PDF, marks the person signed, emails the boarding pass and tells staff
     const postConsent = async (fields: Record<string, string>, signatureFile: File) => {
         const form = new FormData();
         Object.entries(fields).forEach(([key, value]) => form.append(key, value));
         form.append("signature", signatureFile);
-        const response = await fetch("/api/consent", { method: "POST", body: form });
+        const response = await fetch(consentFunctionUrl, { method: "POST", headers: consentHeaders, body: form });
         if (!response.ok) {
             const { error } = await response.json().catch(() => ({ error: null }));
             throw new Error(error || "No se pudo registrar la firma. Intenta de nuevo.");

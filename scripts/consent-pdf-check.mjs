@@ -1,10 +1,10 @@
-// Self-check for src/lib/consentPdf.ts: builds the three consent PDFs with sample data.
+// Self-check for supabase/functions/_shared/consentPdf.ts: builds the three consent PDFs with sample data.
 // Run: node --experimental-strip-types scripts/consent-pdf-check.mjs [outDir]   (writes the PDFs when outDir is given)
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { buildConsentPdf } from '../src/lib/consentPdf.ts'
-import { adultParagraphs, minorClauses, minorParagraphs } from '../src/lib/consentText.ts'
+import { buildConsentPdf } from '../supabase/functions/_shared/consentPdf.ts'
+import { adultParagraphs, minorClauses, minorParagraphs } from '../supabase/functions/_shared/consentText.ts'
 
 const root = path.resolve(import.meta.dirname, '..')
 const png = (file) => new Uint8Array(fs.readFileSync(path.join(root, 'public', file)))

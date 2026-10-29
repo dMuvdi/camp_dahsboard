@@ -6,6 +6,7 @@ import type { User } from "@/lib/supabase";
 import Wordmark from "@/components/Wordmark";
 import { MinorConsent, consentTitle, fullName } from "@/components/ConsentDocument";
 import { camp } from "@/lib/camp";
+import { consentFunctionUrl, consentHeaders } from "@/lib/consentApi";
 
 interface DelegateSignClientProps {
     minor: User;
@@ -235,12 +236,12 @@ export default function DelegateSignClient({
                 }, "image/png", 1);
             });
 
-            // Server builds the PDF with the parent's and this signature, marks the minor signed and emails the QR (api/consent)
+            // The consent Edge Function builds the PDF with the parent's and this signature, marks the minor signed and emails the QR
             const form = new FormData();
             form.append("kind", "delegate");
             form.append("minor_id", minor.id);
             form.append("signature", new File([signatureBlob], "signature.png", { type: "image/png" }));
-            const response = await fetch("/api/consent", { method: "POST", body: form });
+            const response = await fetch(consentFunctionUrl, { method: "POST", headers: consentHeaders, body: form });
             if (!response.ok) {
                 const { error } = await response.json().catch(() => ({ error: null }));
                 throw new Error(error || "No se pudo registrar la firma. Intenta de nuevo.");
