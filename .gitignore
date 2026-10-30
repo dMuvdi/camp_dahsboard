@@ -42,3 +42,6 @@ next-env.d.ts
 
 # npm run preview:email output
 /email-preview
+
+# Supabase CLI local state
+/supabase/.temp
