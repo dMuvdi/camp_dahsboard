@@ -1,14 +1,15 @@
-import { camp } from "@/lib/camp";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { sendPush } from "@/lib/webpush";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { camp } from "./camp.ts";
+import { env } from "./env.ts";
+import { sendPush } from "./webpush.ts";
 
 // Pushes "consent signed" to every staff device with notifications on. Skips quietly when push isn't configured.
-export async function notifyStaffSigned(person: { names: string; last_name_1: string }) {
-    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    const privateKey = process.env.VAPID_PRIVATE_KEY;
+// db: a service role client (the consent Edge Function), since staff devices belong to other users
+export async function notifyStaffSigned(db: SupabaseClient, person: { names: string; last_name_1: string }) {
+    const publicKey = env("VAPID_PUBLIC_KEY");
+    const privateKey = env("VAPID_PRIVATE_KEY");
     if (!publicKey || !privateKey) return;
 
-    const db = supabaseAdmin();
     const { data: subscriptions, error } = await db.from("push_subscriptions").select("endpoint, p256dh, auth");
     if (error) throw error;
 

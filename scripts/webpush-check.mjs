@@ -1,8 +1,8 @@
-// Self-check for src/lib/webpush.ts against the RFC 8291 Appendix A test vector and a VAPID signature round trip.
+// Self-check for supabase/functions/_shared/webpush.ts against the RFC 8291 Appendix A test vector and a VAPID signature round trip.
 // Run: node --experimental-strip-types scripts/webpush-check.mjs
 import assert from 'node:assert/strict'
 import { createECDH, createPublicKey, verify } from 'node:crypto'
-import { encryptPayload, vapidAuthorization } from '../src/lib/webpush.ts'
+import { encryptPayload, vapidAuthorization } from '../supabase/functions/_shared/webpush.ts'
 
 const b64u = (s) => Buffer.from(s.replace(/\s/g, ''), 'base64url')
 

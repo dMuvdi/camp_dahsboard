@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { createCipheriv, createECDH, createPrivateKey, hkdfSync, randomBytes, sign } from 'node:crypto'
 
 // Minimal Web Push sender on node:crypto: RFC 8291 payload encryption + RFC 8292 VAPID auth.
