@@ -1,192 +1,131 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import { supabase } from '@/lib/supabase'
-import Link from 'next/link'
+import { camp } from '@/lib/camp'
 import Wordmark from '@/components/Wordmark'
 import StaffNav from '@/components/StaffNav'
 
+// One QR per camper: the first scan checks them in, the next one checks them out. Each action has its time window
+// (lib/camp); outside it the scanner asks for confirmation instead of refusing, for late arrivals and early departures.
+
+type Person = {
+    id: string; names: string; last_name_1: string; last_name_2: string | null; national_id: string; age: number
+    checked_in: boolean | null; checked_out: boolean | null; has_signed: boolean | null
+}
+type Action = 'in' | 'out'
+type Result =
+    | { kind: 'done'; action: Action; person: Person; at: Date }
+    | { kind: 'confirm'; action: Action; person: Person; reasons: string[] }
+    | { kind: 'info'; title: string; message: string; person: Person }
+    | { kind: 'error'; message: string }
+
+const actionLabel = { in: 'check-in', out: 'check-out' } as const
+const fullName = (p: Person) => [p.names, p.last_name_1, p.last_name_2].filter(Boolean).join(' ')
+const idLabel = (p: Person) => `${Number(p.age) < 18 ? 'T.I.' : 'C.C.'} ${p.national_id}`
+const inWindow = (w: { start: string; end: string }, now = new Date()) => now >= new Date(w.start) && now <= new Date(w.end)
+const time = (d: Date) => d.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' })
+
 export default function ScanQrPage() {
-    const router = useRouter()
     const videoRef = useRef<HTMLVideoElement>(null)
-    const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null)
-    const hasProcessedRef = useRef<boolean>(false)
-    // scanning state not required for UI; keep logic simple
-    const [error, setError] = useState<string>('')
-    const [status, setStatus] = useState<string>('')
-    const [supported, setSupported] = useState<boolean>(true)
-    const [secureContext, setSecureContext] = useState<boolean>(true)
-    const [hasStarted, setHasStarted] = useState<boolean>(false)
-    const [showAlreadyCheckedInDialog, setShowAlreadyCheckedInDialog] = useState<boolean>(false)
-    const [checkedInPersonName, setCheckedInPersonName] = useState<string>('')
+    // decodes keep firing while a result is on screen; this drops them until the staff member moves on
+    const busyRef = useRef(false)
+    const [result, setResult] = useState<Result | null>(null)
+    const [status, setStatus] = useState('Iniciando la cámara…')
+    const [cameraError, setCameraError] = useState('')
+
+    const register = useCallback(async (action: Action, person: Person) => {
+        // only the one flag changes, so a stale copy of the row can't undo other fields
+        const { error } = await supabase.from('People').update(action === 'in' ? { checked_in: true } : { checked_out: true }).eq('id', person.id)
+        if (error) {
+            setResult({ kind: 'error', message: 'No se pudo guardar el registro. Revisa la conexión e intenta de nuevo.' })
+            return
+        }
+        navigator.vibrate?.([40, 60, 40])
+        setResult({ kind: 'done', action, person, at: new Date() })
+    }, [])
+
+    const onScan = useCallback(async (text: string) => {
+        if (busyRef.current) return
+        busyRef.current = true
+        navigator.vibrate?.(30)
+        setStatus('Buscando al campista…')
+        try {
+            const { data, error } = await supabase
+                .from('People')
+                .select('id, names, last_name_1, last_name_2, national_id, age, checked_in, checked_out, has_signed')
+                .eq('id', text.trim())
+                .maybeSingle()
+            if (error || !data) {
+                setResult({ kind: 'error', message: 'Este código no corresponde a ningún campista inscrito.' })
+                return
+            }
+            const person = data as Person
+            if (person.checked_out) {
+                setResult({ kind: 'info', title: 'Ya hizo check-out', message: 'Este campista ya salió del campamento.', person })
+                return
+            }
+            const action: Action = person.checked_in ? 'out' : 'in'
+            const reasons: string[] = []
+            if (action === 'in' && !person.has_signed) reasons.push('No ha firmado el consentimiento.')
+            if (action === 'in' && !inWindow(camp.checkIn)) reasons.push(`El check-in es el ${camp.checkIn.label}.`)
+            if (action === 'out' && !inWindow(camp.checkOut)) reasons.push(`Ya tiene check-in. El check-out es el ${camp.checkOut.label}.`)
+            if (reasons.length) setResult({ kind: 'confirm', action, person, reasons })
+            else await register(action, person)
+        } catch {
+            setResult({ kind: 'error', message: 'No se pudo leer el código. Revisa la conexión e intenta de nuevo.' })
+        }
+    }, [register])
+
+    const next = useCallback(() => {
+        setResult(null)
+        setStatus('Apunta la cámara al código QR')
+        busyRef.current = false
+    }, [])
+
+    // after a successful scan the scanner is ready for the next camper on its own
+    useEffect(() => {
+        if (result?.kind !== 'done') return
+        const t = window.setTimeout(next, 4000)
+        return () => window.clearTimeout(t)
+    }, [result, next])
 
     useEffect(() => {
         const reader = new BrowserMultiFormatReader()
-        codeReaderRef.current = reader
-
-        // Basic support checks
-        const isSecure = typeof window !== 'undefined' ? (location.protocol === 'https:' || location.hostname === 'localhost') : true
-        setSecureContext(isSecure)
-        const hasMedia = typeof navigator !== 'undefined' && !!navigator.mediaDevices && !!navigator.mediaDevices.getUserMedia
-        setSupported(hasMedia)
-
-        // Auto-start camera immediately when possible
-        const v: HTMLVideoElement | null = videoRef.current
-        if (isSecure && hasMedia && v) {
-            ; (async () => {
-                try {
-                    setError('')
-                    setStatus('Requesting camera permission...')
-                    await reader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' } }, audio: false }, v, async (result) => {
-                        if (result) {
-                            const text = result.getText()
-                            await handleDecoded(text)
-                        }
-                    })
-                    setStatus('Point the camera at the QR code')
-                    setHasStarted(true)
-                } catch (e: unknown) {
-                    // Fallback to user-facing camera if env camera not accessible
-                    try {
-                        await reader.decodeFromConstraints({ video: { facingMode: { ideal: 'user' } }, audio: false }, v, async (result) => {
-                            if (result) {
-                                const text = result.getText()
-                                await handleDecoded(text)
-                            }
-                        })
-                        setStatus('Point the camera at the QR code')
-                        setHasStarted(true)
-                    } catch (err: unknown) {
-                        const msg = (err as Error)?.message || (e as Error)?.message || 'Failed to start camera'
-                        setError(msg)
-                    }
-                }
-            })()
+        const video = videoRef.current
+        const secure = location.protocol === 'https:' || location.hostname === 'localhost'
+        if (!secure) {
+            setCameraError('La cámara necesita una conexión segura (https).')
+            return
         }
-
-        return () => {
-            // Gracefully stop continuous decoding if available
-            const stop = (reader as unknown as { stopContinuousDecode?: () => void }).stopContinuousDecode
-            if (typeof stop === 'function') {
-                try { stop() } catch { }
-            }
-            // Stop the camera stream
-            const stream = (v?.srcObject as MediaStream | null)
-            try { stream?.getTracks().forEach(t => t.stop()) } catch { }
-            if (v) (v as HTMLVideoElement).srcObject = null
-            codeReaderRef.current = null
+        if (!navigator.mediaDevices?.getUserMedia || !video) {
+            setCameraError('Este navegador no permite usar la cámara.')
+            return
         }
-    }, [])
-
-    // startScan removed; auto-start handled in mount effect
-
-    const handleDecoded = async (text: string) => {
-        // Guard: ensure we only process the first successful decode
-        if (hasProcessedRef.current) return
-        hasProcessedRef.current = true
-        try {
-            // Assume the QR encodes only the userId
-            const userId = text.trim()
-            setStatus('Verifying participant...')
-
-            // Fetch user to check if already checked in
-            const { data: userData, error: fetchError } = await supabase
-                .from('People')
-                .select('checked_in, names, last_name_1, last_name_2')
-                .eq('id', userId)
-                .single()
-
-            if (fetchError) throw fetchError
-
-            if (!userData) {
-                throw new Error('Participant not found')
-            }
-
-            // Check if already checked in
-            if (userData.checked_in) {
-                const fullName = `${userData.names || ''} ${userData.last_name_1 || ''} ${userData.last_name_2 || ''}`.trim()
-                setCheckedInPersonName(fullName)
-                setShowAlreadyCheckedInDialog(true)
-
-                // Stop scanning
-                const reader = codeReaderRef.current as unknown as { stopContinuousDecode?: () => void }
-                try { reader?.stopContinuousDecode?.() } catch { }
-                const v: HTMLVideoElement | null = videoRef.current
-                const stream = (v?.srcObject as MediaStream | null)
-                try { stream?.getTracks().forEach(t => t.stop()) } catch { }
-                if (v) (v as HTMLVideoElement).srcObject = null
-
-                // Allow processing again after dialog closes
-                hasProcessedRef.current = false
-                return
-            }
-
-            // Update check-in via RPC
-            const { error } = await supabase.rpc('update_person', {
-                p_age: null,
-                p_checked_in: true,
-                p_checked_out: null,
-                p_email: null,
-                p_emergency_contact: null,
-                p_emergency_contact_phone_number: null,
-                p_has_signed: null,
-                p_id: userId,
-                p_last_name_1: null,
-                p_last_name_2: null,
-                p_names: null,
-                p_national_id: null,
-                p_phone_number: null,
+        let controls: { stop: () => void } | undefined
+        const start = (facingMode: string) =>
+            reader.decodeFromConstraints({ video: { facingMode: { ideal: facingMode } }, audio: false }, video, (r) => {
+                if (r) void onScan(r.getText())
             })
-
-            if (error) throw error
-
-            // Stop further scanning immediately after a successful update
-            const reader = codeReaderRef.current as unknown as { stopContinuousDecode?: () => void }
-            try { reader?.stopContinuousDecode?.() } catch { }
-            const v: HTMLVideoElement | null = videoRef.current
-            const stream = (v?.srcObject as MediaStream | null)
-            try { stream?.getTracks().forEach(t => t.stop()) } catch { }
-            if (v) (v as HTMLVideoElement).srcObject = null
-
-            setStatus('Check-in updated! Returning to dashboard...')
-            setTimeout(() => router.push('/dashboard', { scroll: false }), 350)
-        } catch (e: unknown) {
-            const msg = (e as Error)?.message || 'Failed to process QR'
-            setError(msg)
-            // Allow retry if there was an error
-            hasProcessedRef.current = false
+        start('environment')
+            .catch(() => start('user'))
+            .then((c) => {
+                controls = c
+                setStatus('Apunta la cámara al código QR')
+            })
+            .catch(() => setCameraError('No pudimos abrir la cámara. Revisa que la app tenga permiso para usarla.'))
+        return () => {
+            controls?.stop()
+            const stream = video.srcObject as MediaStream | null
+            stream?.getTracks().forEach((t) => t.stop())
+            video.srcObject = null
         }
-    }
-
-    const handleCloseDialog = () => {
-        setShowAlreadyCheckedInDialog(false)
-        setCheckedInPersonName('')
-        router.push('/dashboard', { scroll: false })
-    }
+    }, [onScan])
 
     return (
         <>
-            <style dangerouslySetInnerHTML={{
-                __html: `
-                    video::-webkit-media-controls {
-                        display: none !important;
-                    }
-                    video::-webkit-media-controls-enclosure {
-                        display: none !important;
-                    }
-                    video::-webkit-media-controls-panel {
-                        display: none !important;
-                    }
-                    video::-webkit-media-controls-play-button {
-                        display: none !important;
-                    }
-                    video::-webkit-media-controls-start-playback-button {
-                        display: none !important;
-                    }
-                `
-            }} />
             <header className="bg-oxblood pt-[env(safe-area-inset-top)]">
                 <div className="mx-auto flex h-14 md:h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -196,99 +135,94 @@ export default function ScanQrPage() {
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                         </svg>
-                        Participants
+                        Participantes
                     </Link>
                 </div>
             </header>
+
             {/* phones get a dark, full-bleed camera screen like a native scanner */}
             <div className="flex min-h-[calc(100dvh-3.5rem-env(safe-area-inset-top))] flex-col items-center justify-center bg-ink p-4 pb-36 md:min-h-[calc(100svh-4rem)] md:bg-parchment md:pb-4">
-                <h1 className="font-display text-2xl text-parchment md:text-oxblood mb-4">Scan to check in</h1>
-                {!secureContext && (
-                    <p className="mb-3 text-sm text-oxblood">Camera requires HTTPS. Please use a secure URL or localhost.</p>
-                )}
-                {!supported && (
-                    <p className="mb-3 text-sm text-oxblood">Camera API not supported on this device/browser.</p>
-                )}
-                <div className="relative w-full max-w-md rounded-[28px] overflow-hidden ring-1 ring-white/10 bg-black aspect-[3/4] md:rounded-2xl md:ring-0 md:border-4 md:border-oxblood">
-                    <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center" aria-hidden="true">
-                        <div className="h-[58%] aspect-square rounded-3xl border-2 border-white/70 shadow-[0_0_0_9999px_rgb(0_0_0/0.25)]" />
+                <h1 className="font-display text-2xl text-parchment md:text-oxblood">Escanear QR</h1>
+                <p className="mb-4 mt-1 text-center text-sm text-parchment/70 md:text-ink/70">
+                    El mismo código registra la llegada y, en una segunda lectura, la salida.
+                </p>
+                <div className="relative w-full max-w-md overflow-hidden rounded-[28px] bg-black ring-1 ring-white/10 aspect-[3/4] md:rounded-2xl md:border-4 md:border-oxblood md:ring-0">
+                    <video ref={videoRef} className="h-full w-full object-cover" muted playsInline autoPlay controls={false} />
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
+                        <div className="aspect-square h-[58%] rounded-3xl border-2 border-white/70 shadow-[0_0_0_9999px_rgb(0_0_0/0.25)]" />
                     </div>
-                    <video
-                        ref={videoRef}
-                        className="w-full h-full object-cover"
-                        muted
-                        playsInline
-                        autoPlay
-                        controls={false}
-                        style={{
-                            WebkitPlaybackTargetAvailabilityButton: 'none',
-                        } as React.CSSProperties}
-                    ></video>
                 </div>
-                {/* auto-start camera; no manual button */}
-                {status && <p className="mt-4 text-sm text-parchment/80 md:text-ink/80">{status}</p>}
-                {error && (
-                    <p className="mt-2 text-sm font-semibold text-parchment md:text-oxblood">{error}</p>
-                )}
+                <p role="status" className="mt-4 text-sm text-parchment/80 md:text-ink/80">{cameraError || status}</p>
+            </div>
 
-                {/* Already Checked In Dialog */}
-                {showAlreadyCheckedInDialog && (
-                    <div className="fixed inset-0 z-50">
-                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={handleCloseDialog}></div>
-                        <div className="absolute inset-0 flex items-center justify-center p-4">
-                            <div className="w-full max-w-md bg-white rounded-2xl border border-ink/10 overflow-hidden animate-[slideIn_0.3s_ease-out]">
-                                <div className="px-6 py-5 border-b border-ink/10 bg-parchment/60 flex items-center justify-between">
-                                    <div className="flex items-center space-x-3">
-                                        <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-vermilion">
-                                            <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                            </svg>
-                                        </div>
-                                        <h3 className="text-lg font-bold text-oxblood">Already Checked In</h3>
-                                    </div>
-                                    <button onClick={handleCloseDialog} className="text-ink/50 hover:text-ink transition-colors duration-200">
-                                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
+            {result && (
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm md:items-center md:p-6" role="dialog" aria-modal="true" aria-labelledby="scan-result-title">
+                    <div className="w-full max-w-md rounded-t-[28px] bg-white px-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-6 animate-[sheetUp_0.25s_ease-out] md:rounded-3xl md:pb-6">
+                        {result.kind === 'done' && (
+                            <div className="text-center">
+                                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-glass text-white">
+                                    <svg className="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                </div>
+                                <h2 id="scan-result-title" className="mt-4 text-xl font-bold text-glass">
+                                    {result.action === 'in' ? 'Check-in registrado' : 'Check-out registrado'}
+                                </h2>
+                                <p className="mt-3 text-2xl font-bold text-ink">{fullName(result.person)}</p>
+                                <p className="mt-1 text-sm text-ink/60">{idLabel(result.person)} · {time(result.at)}</p>
+                                <button type="button" onClick={next} className="mt-6 h-12 w-full rounded-2xl bg-oxblood text-base font-bold text-parchment active:scale-[0.99]">
+                                    Escanear siguiente
+                                </button>
+                            </div>
+                        )}
+
+                        {result.kind === 'confirm' && (
+                            <div>
+                                <h2 id="scan-result-title" className="text-xl font-bold text-oxblood">¿Registrar el {actionLabel[result.action]}?</h2>
+                                <p className="mt-3 text-2xl font-bold text-ink">{fullName(result.person)}</p>
+                                <p className="mt-1 text-sm text-ink/60">{idLabel(result.person)}</p>
+                                <ul className="mt-4 space-y-2">
+                                    {result.reasons.map((r) => (
+                                        <li key={r} className="rounded-xl bg-vermilion/10 px-4 py-3 text-sm font-semibold text-oxblood">{r}</li>
+                                    ))}
+                                </ul>
+                                <div className="mt-6 grid grid-cols-2 gap-3">
+                                    <button type="button" onClick={next} className="h-12 rounded-2xl bg-ink/5 text-sm font-bold text-ink/80">
+                                        Cancelar
                                     </button>
-                                </div>
-                                <div className="px-6 py-6 space-y-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-14 w-14 rounded-2xl flex items-center justify-center bg-oxblood">
-                                            <span className="text-white font-bold text-xl">
-                                                {checkedInPersonName.charAt(0)}
-                                            </span>
-                                        </div>
-                                        <div>
-                                            <div className="font-bold text-ink text-lg">{checkedInPersonName}</div>
-                                            <div className="text-sm text-ink/70">is already checked in</div>
-                                        </div>
-                                    </div>
-                                    <div className="rounded-xl border border-vermilion/30 bg-vermilion/5 p-4 text-sm text-oxblood">
-                                        <div className="flex items-start space-x-2">
-                                            <svg className="h-5 w-5 text-vermilion flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                            </svg>
-                                            <p className="font-semibold">This participant has already been checked in. No action needed.</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="px-6 py-4 border-t border-ink/10 bg-white flex items-center justify-end gap-3">
-                                    <button
-                                        onClick={handleCloseDialog}
-                                        className="px-6 py-3 rounded-lg text-sm font-semibold text-parchment bg-oxblood hover:bg-oxblood/90 transition-colors"
-                                    >
-                                        Return to Dashboard
+                                    <button type="button" onClick={() => void register(result.action, result.person)} className="h-12 rounded-2xl bg-oxblood text-sm font-bold text-parchment">
+                                        Registrar {actionLabel[result.action]}
                                     </button>
                                 </div>
                             </div>
-                        </div>
+                        )}
+
+                        {result.kind === 'info' && (
+                            <div className="text-center">
+                                <h2 id="scan-result-title" className="text-xl font-bold text-ink">{result.title}</h2>
+                                <p className="mt-3 text-2xl font-bold text-ink">{fullName(result.person)}</p>
+                                <p className="mt-1 text-sm text-ink/60">{result.message}</p>
+                                <button type="button" onClick={next} className="mt-6 h-12 w-full rounded-2xl bg-oxblood text-base font-bold text-parchment">
+                                    Escanear siguiente
+                                </button>
+                            </div>
+                        )}
+
+                        {result.kind === 'error' && (
+                            <div className="text-center">
+                                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-vermilion text-white">
+                                    <svg className="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                </div>
+                                <h2 id="scan-result-title" className="mt-4 text-xl font-bold text-oxblood">No se registró</h2>
+                                <p className="mt-2 text-ink/70">{result.message}</p>
+                                <button type="button" onClick={next} className="mt-6 h-12 w-full rounded-2xl bg-oxblood text-base font-bold text-parchment">
+                                    Intentar de nuevo
+                                </button>
+                            </div>
+                        )}
                     </div>
-                )}
-            </div>
+                </div>
+            )}
+
             <StaffNav />
         </>
     )
 }
-
-

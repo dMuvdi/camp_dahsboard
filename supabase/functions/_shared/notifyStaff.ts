@@ -14,8 +14,8 @@ export async function notifyStaffSigned(db: SupabaseClient, person: { names: str
     if (error) throw error;
 
     const payload = {
-        title: "Consent signed",
-        body: `${person.names} ${person.last_name_1} signed the ${camp.name} consent.`,
+        title: "Consentimiento firmado",
+        body: `${person.names} ${person.last_name_1} firmó el consentimiento de ${camp.name}.`,
         url: "/dashboard",
     };
     const vapid = { publicKey, privateKey, subject: `mailto:${camp.contactEmail}` };

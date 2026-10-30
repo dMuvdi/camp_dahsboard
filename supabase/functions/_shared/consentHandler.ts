@@ -14,6 +14,7 @@ import { notifyStaffSigned } from "./notifyStaff.ts";
 // JSON   { action: "lookup", nationalId } -> registered camper with that exact C.C., minimal fields
 // JSON   { action: "send-email", userId, emailType } -> staff resend of the signing link or the boarding pass;
 //        needs the staff member's access token as the Bearer, the recipient always comes from the database
+// JSON   { action: "document", userId }  -> staff only: short-lived link to the signed PDF (the bucket is private)
 // form   kind=adult             person_id, signature            -> signed PDF
 // form   kind=minor             minor_id, manager_id, signature -> signed PDF (the parent goes to camp)
 // form   kind=delegate-request  minor_id, manager_id, tutor_name, tutor_national_id, signature -> emails the named adult
@@ -37,6 +38,8 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isMinor = (p: Person) => Number(p.age) < 18;
 const idLabel = (p: Person) => `${isMinor(p) ? "T.I." : "C.C."} ${p.national_id}`;
 const longDate = (d: Date) => new Intl.DateTimeFormat("es-CO", { dateStyle: "long", timeZone: "America/Bogota" }).format(d);
+// Signed PDFs of this edition; private, so People.document_url keeps the object path, not a public URL
+const DOCS_BUCKET = "camp_2026";
 
 const cors = {
     "Access-Control-Allow-Origin": "*",
@@ -92,10 +95,9 @@ function logos() {
 // Stores the PDF, marks the person signed, emails their boarding pass and tells staff
 async function finish(db: SupabaseClient, person: Person, pdf: Uint8Array, site: string, update: Record<string, unknown> = {}) {
     const path = `consent_${person.id}_${Date.now()}.pdf`;
-    const { error: uploadError } = await db.storage.from("documents").upload(path, pdf, { contentType: "application/pdf" });
+    const { error: uploadError } = await db.storage.from(DOCS_BUCKET).upload(path, pdf, { contentType: "application/pdf" });
     if (uploadError) throw uploadError;
-    const { publicUrl } = db.storage.from("documents").getPublicUrl(path).data;
-    const { error } = await db.from("People").update({ ...update, document_url: publicUrl, has_signed: true }).eq("id", person.id);
+    const { error } = await db.from("People").update({ ...update, document_url: path, has_signed: true }).eq("id", person.id);
     if (error) throw error;
 
     const [ticket, push] = await Promise.allSettled([
@@ -106,6 +108,13 @@ async function finish(db: SupabaseClient, person: Person, pdf: Uint8Array, site:
     ]);
     if (ticket.status === "rejected") console.error("consent: ticket email failed", ticket.reason);
     if (push.status === "rejected") console.error("consent: staff push failed", push.reason);
+}
+
+// Staff-only actions: the function gateway already checked the JWT, this rejects the anon key (a JWT but not a user)
+async function requireStaff(db: SupabaseClient, req: Request) {
+    const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+    const { error } = await db.auth.getUser(token);
+    if (error) throw new HttpError(401, "Inicia sesión como staff para hacer esto.");
 }
 
 async function sign(db: SupabaseClient, form: FormData, site: string): Promise<Response> {
@@ -224,10 +233,7 @@ export async function handleConsent(req: Request): Promise<Response> {
                 return data ? json(data) : json({ error: "No encontrado" }, 404);
             }
             if (body.action === "send-email") {
-                // the function gateway already checked the JWT; this rejects the anon key, which is a JWT but not a user
-                const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-                const { error: authError } = await db.auth.getUser(token);
-                if (authError) throw new HttpError(401, "Inicia sesión como staff para enviar correos.");
+                await requireStaff(db, req);
                 const person = await loadPerson(db, body.userId);
                 if (!person.email) throw new HttpError(404, "Este participante no tiene correo.");
                 const isContract = body.emailType === "contract";
@@ -240,6 +246,19 @@ export async function handleConsent(req: Request): Promise<Response> {
                     contractUrl: isContract ? `${site}/contract_sign/${person.id}` : undefined,
                 });
                 return json({ ok: true });
+            }
+            if (body.action === "document") {
+                await requireStaff(db, req);
+                const person = await loadPerson(db, body.userId);
+                const { data, error } = await db.from("People").select("document_url").eq("id", person.id).single();
+                if (error) throw error;
+                const stored = data.document_url as string | null;
+                if (!stored) throw new HttpError(404, "Este participante aún no tiene documento firmado.");
+                // documents signed before camp_2026 were stored as public URLs
+                if (/^https?:\/\//.test(stored)) return json({ url: stored });
+                const { data: signed, error: signError } = await db.storage.from(DOCS_BUCKET).createSignedUrl(stored, 300);
+                if (signError) throw signError;
+                return json({ url: signed.signedUrl });
             }
             throw new HttpError(400, "Acción no válida.");
         }

@@ -8,9 +8,9 @@ type State = 'loading' | 'unsupported' | 'install' | 'denied' | 'off' | 'on' | '
 const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
 
 const help: Partial<Record<State, string>> = {
-    install: 'On iPhone, open this page in Safari, tap Share and then "Add to Home Screen". Turn notifications on from the app icon.',
-    denied: 'Notifications are blocked for this site. Allow them in your browser or phone settings and try again.',
-    unsupported: 'This browser cannot receive notifications.',
+    install: 'En iPhone, abre esta página en Safari, toca Compartir y luego «Agregar a inicio». Activa las notificaciones desde el ícono de la app.',
+    denied: 'Las notificaciones están bloqueadas para este sitio. Actívalas en los ajustes del navegador o del celular e intenta de nuevo.',
+    unsupported: 'Este navegador no puede recibir notificaciones.',
 }
 
 function base64UrlToBytes(value: string) {
@@ -77,12 +77,12 @@ export default function PushToggle() {
         } catch (err) {
             console.error('Push subscription failed', err)
             setState('off')
-            setMessage('Notifications could not be turned on. Try again.')
+            setMessage('No se pudieron activar las notificaciones. Intenta de nuevo.')
         }
     }
 
     const on = state === 'on'
-    const label = on ? 'Turn off notifications' : 'Turn on notifications'
+    const label = on ? 'Desactivar notificaciones' : 'Activar notificaciones'
 
     return (
         <div className="relative">

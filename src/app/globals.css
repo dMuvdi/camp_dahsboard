@@ -111,3 +111,16 @@ input {
     transform: translateY(0);
   }
 }
+
+/* staff app splash: the logo settles in once */
+@keyframes splashIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

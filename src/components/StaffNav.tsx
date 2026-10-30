@@ -24,18 +24,18 @@ export default function StaffNav({ onAdd }: { onAdd?: () => void }) {
 
     return (
         <nav
-            aria-label="Staff sections"
+            aria-label="Secciones"
             className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-40 select-none rounded-[26px] bg-white/95 px-2 shadow-[0_8px_30px_-8px_rgb(20_40_64/0.35)] ring-1 ring-ink/5 backdrop-blur md:hidden"
         >
             <div className="grid grid-cols-3 items-center">
                 <Link href="/dashboard" aria-current={pathname === '/dashboard' ? 'page' : undefined} className={tab(pathname === '/dashboard')}>
                     <Icon d={icons.people} />
-                    Participants
+                    Participantes
                 </Link>
                 <Link
                     href="/scan-qr"
                     aria-current={pathname === '/scan-qr' ? 'page' : undefined}
-                    aria-label="Scan QR"
+                    aria-label="Escanear QR"
                     className="mx-auto -mt-7 flex h-16 w-16 items-center justify-center rounded-full bg-oxblood text-parchment shadow-[0_10px_24px_-8px_rgb(79_1_0/0.7)] ring-4 ring-canvas transition-transform active:scale-95"
                 >
                     <Icon d={icons.scan} className="h-7 w-7" />
@@ -43,12 +43,12 @@ export default function StaffNav({ onAdd }: { onAdd?: () => void }) {
                 {onAdd ? (
                     <button type="button" onClick={onAdd} className={tab(false)}>
                         <Icon d={icons.add} />
-                        Add
+                        Agregar
                     </button>
                 ) : (
                     <Link href="/dashboard?add=1" className={tab(false)}>
                         <Icon d={icons.add} />
-                        Add
+                        Agregar
                     </Link>
                 )}
             </div>

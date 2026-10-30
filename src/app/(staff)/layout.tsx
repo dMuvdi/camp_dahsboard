@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Splash from '@/components/Splash'
 
 // iOS ignores the manifest for launch screens: it needs one image per screen size (portrait), matched by media query
 const splash = [
@@ -25,5 +26,10 @@ export const metadata: Metadata = {
 }
 
 export default function StaffLayout({ children }: { children: React.ReactNode }) {
-    return children
+    return (
+        <>
+            {children}
+            <Splash />
+        </>
+    )
 }
