@@ -30,8 +30,8 @@ export default function LoginPage() {
             } else {
                 router.push('/dashboard')
             }
-        } catch (error) {
-            setError('An unexpected error occurred: ' + error)
+        } catch {
+            setError('No se pudo iniciar sesión. Revisa tu conexión e intenta de nuevo.')
         } finally {
             setLoading(false)
         }
@@ -64,15 +64,15 @@ export default function LoginPage() {
                             </div>
 
                             <h1 className="font-display text-3xl text-oxblood mb-2">
-                                Welcome back
+                                Bienvenido
                             </h1>
                             <p className="text-ink/70 mb-8">
-                                Sign in to manage Revelation Camp participants.
+                                Inicia sesión para gestionar a los participantes de Revelation Camp.
                             </p>
                             <form className="space-y-6" onSubmit={handleLogin}>
                                 <div className="space-y-4">
                                     <div>
-                                        <label htmlFor="email-address" className="block text-sm font-semibold text-ink mb-1.5">Email</label>
+                                        <label htmlFor="email-address" className="block text-sm font-semibold text-ink mb-1.5">Correo</label>
                                         <input
                                             id="email-address"
                                             name="email"
@@ -80,13 +80,13 @@ export default function LoginPage() {
                                             autoComplete="email"
                                             required
                                             className="w-full px-4 py-3 border border-ink/20 rounded-lg bg-white text-ink placeholder-ink/40 focus:outline-none focus:border-vermilion focus:ring-2 focus:ring-vermilion/25"
-                                            placeholder="you@example.com"
+                                            placeholder="tu@correo.com"
                                             value={email}
                                             onChange={(e) => setEmail(e.target.value)}
                                         />
                                     </div>
                                     <div>
-                                        <label htmlFor="password" className="block text-sm font-semibold text-ink mb-1.5">Password</label>
+                                        <label htmlFor="password" className="block text-sm font-semibold text-ink mb-1.5">Contraseña</label>
                                         <input
                                             id="password"
                                             name="password"
@@ -111,7 +111,7 @@ export default function LoginPage() {
                                     disabled={loading}
                                     className="w-full bg-oxblood hover:bg-oxblood/90 text-parchment font-semibold py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    {loading ? 'Signing in...' : 'Sign in'}
+                                    {loading ? 'Entrando…' : 'Iniciar sesión'}
                                 </button>
                             </form>
                             <p className="mt-8 text-center text-sm text-ink/60">

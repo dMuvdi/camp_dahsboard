@@ -151,7 +151,7 @@ export default function ContractSignClient({
     const delegateLookup = usePersonLookup(
         delegateNationalId,
         isMinor && guardianSelection === "delegate",
-        "No encontramos a ningún campista inscrito con esta cédula. El responsable debe estar inscrito en el campamento.",
+        `No encontramos a nadie inscrito en el campamento con esta cédula. Revisa el número. Si está bien, pídele a esa persona que se comunique con el equipo de VIDA (${camp.contactEmail}) para terminar su inscripción; cuando aparezca inscrita, vuelve a este enlace para completar la de ${minorFirstName}.`,
     );
 
     const resizeCanvas = useCallback(() => {
@@ -425,7 +425,7 @@ export default function ContractSignClient({
         {
             value: "delegate" as const,
             title: "Va con otro adulto",
-            description: `Autorizo a un adulto inscrito en el campamento para que sea el responsable de ${minorFirstName}.`,
+            description: `${minorFirstName} irá con otro adulto que ya está inscrito en el campamento y que será su representante allá.`,
         },
     ];
 
@@ -603,10 +603,12 @@ export default function ContractSignClient({
 
                                                 {guardianSelection === "delegate" && (
                                                     <div className="rounded-xl bg-parchment/50 p-4">
-                                                        <label htmlFor="delegate-id" className={labelClass}>Cédula del adulto responsable</label>
-                                                        <p id="delegate-hint" className="mb-2 text-sm text-ink/60">
-                                                            Debe estar inscrito(a) en el campamento. Le enviaremos un correo para que también firme.
-                                                        </p>
+                                                        <label htmlFor="delegate-id" className={labelClass}>Cédula del adulto que acompañará a {minorFirstName}</label>
+                                                        <ul id="delegate-hint" className="mb-3 list-disc space-y-1 pl-5 text-sm leading-relaxed text-ink/70">
+                                                            <li>Es la persona adulta con la que {minorFirstName} irá al campamento y que será su representante allá (por ejemplo, un familiar o un líder).</li>
+                                                            <li>Esa persona <strong className="text-ink">ya debe estar inscrita</strong> en el campamento. Escribe su número de cédula sin puntos ni espacios.</li>
+                                                            <li>Le enviaremos un correo para que también firme esta autorización.</li>
+                                                        </ul>
                                                         <input
                                                             id="delegate-id"
                                                             type="text"
