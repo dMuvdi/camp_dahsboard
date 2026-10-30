@@ -12,6 +12,8 @@ import { notifyStaffSigned } from "./notifyStaff.ts";
 //
 // JSON   { action: "person", id }        -> fields the signing page shows (+ manager for the delegate page)
 // JSON   { action: "lookup", nationalId } -> registered camper with that exact C.C., minimal fields
+// JSON   { action: "send-email", userId, emailType } -> staff resend of the signing link or the boarding pass;
+//        needs the staff member's access token as the Bearer, the recipient always comes from the database
 // form   kind=adult             person_id, signature            -> signed PDF
 // form   kind=minor             minor_id, manager_id, signature -> signed PDF (the parent goes to camp)
 // form   kind=delegate-request  minor_id, manager_id, tutor_name, tutor_national_id, signature -> emails the named adult
@@ -220,6 +222,24 @@ export async function handleConsent(req: Request): Promise<Response> {
                 const { data, error } = await db.from("People").select("id, names, last_name_1, last_name_2, age").eq("national_id", id).limit(1).maybeSingle();
                 if (error) throw error;
                 return data ? json(data) : json({ error: "No encontrado" }, 404);
+            }
+            if (body.action === "send-email") {
+                // the function gateway already checked the JWT; this rejects the anon key, which is a JWT but not a user
+                const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+                const { error: authError } = await db.auth.getUser(token);
+                if (authError) throw new HttpError(401, "Inicia sesión como staff para enviar correos.");
+                const person = await loadPerson(db, body.userId);
+                if (!person.email) throw new HttpError(404, "Este participante no tiene correo.");
+                const isContract = body.emailType === "contract";
+                await sendCampEmail({
+                    emailType: isContract ? "contract" : "ticket",
+                    to: person.email,
+                    fullName: fullName(person),
+                    userId: person.id,
+                    origin: site,
+                    contractUrl: isContract ? `${site}/contract_sign/${person.id}` : undefined,
+                });
+                return json({ ok: true });
             }
             throw new HttpError(400, "Acción no válida.");
         }

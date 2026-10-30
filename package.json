@@ -11,7 +11,8 @@
     "start": "next start",
     "lint": "eslint",
     "check:webpush": "node --experimental-strip-types scripts/webpush-check.mjs",
-    "check:pdf": "node --experimental-strip-types scripts/consent-pdf-check.mjs"
+    "check:pdf": "node --experimental-strip-types scripts/consent-pdf-check.mjs",
+    "preview:email": "node --experimental-strip-types scripts/email-preview.mjs"
   },
   "dependencies": {
     "@supabase/auth-helpers-nextjs": "^0.10.0",

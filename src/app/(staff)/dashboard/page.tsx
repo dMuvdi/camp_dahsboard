@@ -9,6 +9,7 @@ import PushToggle from '@/components/PushToggle'
 import StaffNav from '@/components/StaffNav'
 import InstallHint from '@/components/InstallHint'
 import { camp } from '@/lib/camp'
+import { consentFunctionUrl } from '@/lib/consentApi'
 
 interface DashboardStats {
     total: number
@@ -309,13 +310,17 @@ export default function DashboardPage() {
         fetchUsers({}, { silent: true })
     }
 
-    // The email route only accepts signed-in staff; it looks up the recipient itself
+    // The consent Edge Function sends it (SMTP secrets live in Supabase); the staff session proves who asks
     const sendStaffEmail = async (userId: string, emailType: 'contract' | 'ticket') => {
         const { data: { session } } = await supabase.auth.getSession()
-        return fetch('/api/send-email', {
+        return fetch(consentFunctionUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}` },
-            body: JSON.stringify({ userId, emailType }),
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${session?.access_token ?? ''}`,
+                apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
+            },
+            body: JSON.stringify({ action: 'send-email', userId, emailType }),
         })
     }
 
