@@ -24,8 +24,8 @@ const withImages = (html) => html.replace(/cid:([\w-]+)/g, (_, cid) => pathToFil
 
 const emails = {
     'ticket.html': ticketEmail('Ana María Gómez Ríos'),
-    'contract.html': contractEmail('Ana María Gómez Ríos', 'https://camp-dahsboard.vercel.app/contract_sign/preview'),
-    'delegate.html': contractEmail('Samuel Mejía Torres', 'https://camp-dahsboard.vercel.app/delegate_signature/preview', 'Valentina Pérez Luna'),
+    'contract.html': contractEmail('Ana María Gómez Ríos', 'https://revelation-camp.vercel.app/contract_sign/preview'),
+    'delegate.html': contractEmail('Samuel Mejía Torres', 'https://revelation-camp.vercel.app/delegate_signature/preview', 'Valentina Pérez Luna'),
 }
 for (const [file, html] of Object.entries(emails)) {
     fs.writeFileSync(path.join(out, file), withImages(html))
