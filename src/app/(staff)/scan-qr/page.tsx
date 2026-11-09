@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import { supabase } from '@/lib/supabase'
-import { camp } from '@/lib/camp'
+import { camp, inWindow } from '@/lib/camp'
 import Wordmark from '@/components/Wordmark'
 import StaffNav from '@/components/StaffNav'
 
@@ -25,7 +25,6 @@ type Result =
 const actionLabel = { in: 'check-in', out: 'check-out' } as const
 const fullName = (p: Person) => [p.names, p.last_name_1, p.last_name_2].filter(Boolean).join(' ')
 const idLabel = (p: Person) => `${Number(p.age) < 18 ? 'T.I.' : 'C.C.'} ${p.national_id}`
-const inWindow = (w: { start: string; end: string }, now = new Date()) => now >= new Date(w.start) && now <= new Date(w.end)
 const time = (d: Date) => d.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' })
 
 export default function ScanQrPage() {

@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { arrival } from "./arrival.ts";
 import { sendCampEmail } from "./campEmail.ts";
 import { buildConsentPdf, type PdfSignature } from "./consentPdf.ts";
 import { adultParagraphs, fullName, minorClauses, minorParagraphs } from "./consentText.ts";
@@ -15,6 +16,7 @@ import { notifyStaffSigned } from "./notifyStaff.ts";
 // JSON   { action: "send-email", userId, emailType } -> staff resend of the signing link or the boarding pass;
 //        needs the staff member's access token as the Bearer, the recipient always comes from the database
 // JSON   { action: "document", userId }  -> staff only: short-lived link to the signed PDF (the bucket is private)
+// JSON   { action: "arrive", key, id }   -> camper's own check-in/out from the NFC sticker link (/llegada?k=CHECKIN_KEY)
 // form   kind=adult             person_id, signature            -> signed PDF
 // form   kind=minor             minor_id, manager_id, signature -> signed PDF (the parent goes to camp)
 // form   kind=delegate-request  minor_id, manager_id, tutor_name, tutor_national_id, signature -> emails the named adult
@@ -259,6 +261,22 @@ export async function handleConsent(req: Request): Promise<Response> {
                 const { data: signed, error: signError } = await db.storage.from(DOCS_BUCKET).createSignedUrl(stored, 300);
                 if (signError) throw signError;
                 return json({ url: signed.signedUrl });
+            }
+            if (body.action === "arrive") {
+                // shortcut: one shared key for every sticker, so whoever has the link can check in a camper by C.C. during
+                // the window; staff still cross-check the list. Per-sticker keys if that gets abused.
+                const key = env("CHECKIN_KEY");
+                if (!key || body.key !== key) throw new HttpError(403, "Este enlace de llegada no es válido. Acércate al staff.");
+                const person = await loadPerson(db, body.id);
+                const { data, error } = await db.from("People").select("has_signed, checked_in, checked_out").eq("id", person.id).single();
+                if (error) throw error;
+                const result = arrival(data);
+                if (!result.ok) throw new HttpError(409, result.message);
+                if (result.update) {
+                    const { error: updateError } = await db.from("People").update(result.update).eq("id", person.id);
+                    if (updateError) throw updateError;
+                }
+                return json({ name: fullName(person), title: result.title, message: result.message });
             }
             throw new HttpError(400, "Acción no válida.");
         }
