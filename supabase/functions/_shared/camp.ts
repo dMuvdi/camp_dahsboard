@@ -8,7 +8,8 @@ export const camp = {
     boardingPlace: 'Muelle Turístico de Manga',
     contactEmail: 'vida@iglesiacbicartagena.com',
     // Scanner time windows, Colombia time (UTC-5, no daylight saving)
-    checkIn: { start: '2026-11-13T06:00:00-05:00', end: '2026-11-13T10:00:00-05:00', label: 'viernes 13 de noviembre, de 6:00 a 10:00 a. m.' },
+    // open the whole camp so leaders who arrive late can still check in; it closes when check-out opens
+    checkIn: { start: '2026-11-13T06:00:00-05:00', end: '2026-11-15T09:00:00-05:00', label: 'del viernes 13 de noviembre a las 6:00 a. m. al domingo 15 a las 9:00 a. m.' },
     checkOut: { start: '2026-11-15T09:00:00-05:00', end: '2026-11-15T14:00:00-05:00', label: 'domingo 15 de noviembre, de 9:00 a. m. a 2:00 p. m.' },
 }
 

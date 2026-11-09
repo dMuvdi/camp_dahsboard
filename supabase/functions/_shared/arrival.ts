@@ -19,6 +19,6 @@ export function arrival(p: ArrivalState, now = new Date()): Arrival {
         return { ok: true, update: null, title: "Ya tienes check-in", message: `Tu llegada ya está registrada. El check-out es el ${camp.checkOut.label}.` };
     }
     if (!p.has_signed) return { ok: false, message: "Aún no has firmado el consentimiento. Acércate al staff para registrarte." };
-    if (!inWindow(camp.checkIn, now)) return { ok: false, message: `El check-in es el ${camp.checkIn.label}.` };
+    if (!inWindow(camp.checkIn, now)) return { ok: false, message: `El check-in va ${camp.checkIn.label}.` };
     return { ok: true, update: { checked_in: true }, title: "Check-in registrado", message: `¡Bienvenido(a) a ${camp.name}!` };
 }
