@@ -12,6 +12,7 @@
     "lint": "eslint",
     "check:webpush": "node --experimental-strip-types scripts/webpush-check.mjs",
     "check:pdf": "node --experimental-strip-types scripts/consent-pdf-check.mjs",
+    "check:arrival": "node --experimental-strip-types scripts/arrival-check.mjs",
     "preview:email": "node --experimental-strip-types scripts/email-preview.mjs"
   },
   "dependencies": {

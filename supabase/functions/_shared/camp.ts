@@ -11,3 +11,6 @@ export const camp = {
     checkIn: { start: '2026-11-13T06:00:00-05:00', end: '2026-11-13T10:00:00-05:00', label: 'viernes 13 de noviembre, de 6:00 a 10:00 a. m.' },
     checkOut: { start: '2026-11-15T09:00:00-05:00', end: '2026-11-15T14:00:00-05:00', label: 'domingo 15 de noviembre, de 9:00 a. m. a 2:00 p. m.' },
 }
+
+// true while now is inside a check-in or check-out window
+export const inWindow = (w: { start: string; end: string }, now = new Date()) => now >= new Date(w.start) && now <= new Date(w.end)

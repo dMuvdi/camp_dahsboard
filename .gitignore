@@ -45,3 +45,6 @@ next-env.d.ts
 
 # Supabase CLI local state
 /supabase/.temp
+
+# NFC sticker link and its key (CHECKIN_KEY): never commit
+/nfc-stickers
