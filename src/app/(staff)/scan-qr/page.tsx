@@ -69,7 +69,7 @@ export default function ScanQrPage() {
             const action: Action = person.checked_in ? 'out' : 'in'
             const reasons: string[] = []
             if (action === 'in' && !person.has_signed) reasons.push('No ha firmado el consentimiento.')
-            if (action === 'in' && !inWindow(camp.checkIn)) reasons.push(`El check-in es el ${camp.checkIn.label}.`)
+            if (action === 'in' && !inWindow(camp.checkIn)) reasons.push(`El check-in va ${camp.checkIn.label}.`)
             if (action === 'out' && !inWindow(camp.checkOut)) reasons.push(`Ya tiene check-in. El check-out es el ${camp.checkOut.label}.`)
             if (reasons.length) setResult({ kind: 'confirm', action, person, reasons })
             else await register(action, person)

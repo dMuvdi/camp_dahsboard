@@ -89,6 +89,7 @@ export default function DashboardPage() {
     const [confirmUser, setConfirmUser] = useState<User | null>(null)
     const [isQRConfirmOpen, setIsQRConfirmOpen] = useState(false)
     const [confirmQRUser, setConfirmQRUser] = useState<User | null>(null)
+    const [checkInUser, setCheckInUser] = useState<User | null>(null)
     const [isEditing, setIsEditing] = useState(false)
     const [editingUser, setEditingUser] = useState<User | null>(null)
     const [isDeleting, setIsDeleting] = useState(false)
@@ -357,6 +358,18 @@ export default function DashboardPage() {
             setEmailStatus({ type: 'error', message: 'No se pudo abrir el documento. Intenta de nuevo.' })
             setTimeout(() => setEmailStatus(null), 5000)
         }
+    }
+
+    // For whoever can't tap the sticker or show their QR (a leader arriving late without their phone)
+    const registerCheckIn = async (user: User) => {
+        setCheckInUser(null)
+        // only the one flag, like the scanner
+        const { error } = await supabase.from('People').update({ checked_in: true }).eq('id', user.id)
+        setEmailStatus(error
+            ? { type: 'error', message: 'No se pudo registrar el check-in. Revisa la conexión e intenta de nuevo.' }
+            : { type: 'success', message: `Check-in registrado: ${user.names} ${user.last_name_1}` })
+        setTimeout(() => setEmailStatus(null), 5000)
+        if (!error) await fetchUsers(getActiveFilters(), { silent: true })
     }
 
     const sendEmailTo = async (user: User) => {
@@ -699,6 +712,18 @@ export default function DashboardPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
                 </svg>
             </button>
+            <button
+                type="button"
+                onClick={() => setCheckInUser(user)}
+                disabled={!!user.checked_in}
+                className={iconBtn}
+                aria-label="Registrar check-in"
+                title={user.checked_in ? 'Ya tiene check-in' : 'Registrar check-in'}
+            >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                </svg>
+            </button>
             <button type="button" onClick={() => { void handleCopySignatureLink(user) }} className={iconBtn} aria-label="Copiar link de firma" title="Copiar link de firma">
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
@@ -838,6 +863,34 @@ export default function DashboardPage() {
                                         className="px-5 py-2 rounded-lg text-sm font-bold text-white transition bg-ink hover:bg-ink/90"
                                     >
                                         Enviar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {checkInUser && (
+                    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="checkin-title">
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setCheckInUser(null)}></div>
+                        <div className="absolute inset-0 flex items-center justify-center p-4">
+                            <div className="w-full max-w-md bg-white rounded-2xl border-2 border-ink/10 overflow-hidden">
+                                <div className="px-6 py-5 border-b border-ink/10 bg-parchment/60">
+                                    <h3 id="checkin-title" className="text-lg font-bold text-ink">Registrar check-in</h3>
+                                </div>
+                                <div className="px-6 py-5 space-y-3">
+                                    <p className="text-sm text-ink/80">Confirma que esta persona ya llegó:</p>
+                                    <div className="text-base">
+                                        <div className="font-bold text-ink">{checkInUser.names} {checkInUser.last_name_1} {checkInUser.last_name_2}</div>
+                                        <div className="text-sm tabular-nums text-ink/70">{Number(checkInUser.age) < 18 ? 'T.I.' : 'C.C.'} {checkInUser.national_id}</div>
+                                    </div>
+                                    {!checkInUser.has_signed && (
+                                        <p className="rounded-xl bg-vermilion/10 px-4 py-3 text-sm font-semibold text-oxblood">No ha firmado el consentimiento.</p>
+                                    )}
+                                </div>
+                                <div className="px-6 py-4 border-t border-ink/10 bg-white flex items-center justify-end gap-3">
+                                    <button type="button" onClick={() => setCheckInUser(null)} className="px-5 py-2 rounded-lg text-sm font-bold text-ink/80 bg-ink/5 hover:bg-ink/10 transition">Cancelar</button>
+                                    <button type="button" onClick={() => { void registerCheckIn(checkInUser) }} className="px-5 py-2 rounded-lg text-sm font-bold text-parchment transition bg-oxblood hover:bg-oxblood/90">
+                                        Registrar check-in
                                     </button>
                                 </div>
                             </div>
